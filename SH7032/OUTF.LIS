@@ -1,0 +1,526 @@
+**    SH7000 Series  Object Linker  List file.
+**    Date/Time = Thu Jan 11 14:15:38 2001
+**    S-format file name = OUTF.MOT
+
+
+
+
+**    Input file(s) list.
+File No.      File name
+
+      1       VECTOR.OBJ
+      2       DUMMY.OBJ
+      3       OUTF.OBJ
+      4       EE.OBJ
+      5       INIT.OBJ
+      6       USER.OBJ
+      7       USER2_.OBJ
+      8       UNIT.OBJ
+      9       SPEED.OBJ
+     10       PI.OBJ
+     11       ADAPT.OBJ
+     12       DEADTC.OBJ
+     13       DEADTNEW.OBJ
+     14       AD_IN.OBJ
+     15       TABLE.OBJ
+     16       TABLE1.OBJ
+     17       TABLE2.OBJ
+
+
+
+**    Section(s) list.
+File No. Section name                        Type     Address
+
+      1  VECTOR                              CODE     H'0900:0000 - H'0900:03FF
+      2  DUMMY                               CODE     H'0900:0400 - H'0900:0401
+      3  MAIN                                CODE     H'0900:52E8 - H'0900:9169
+      3  DATA                                DATA     H'0FFF:F000 - H'0FFF:F39B
+      3  STACK                               STACK    H'0FFF:FE00 - H'0FFF:FF8F
+      4  EEPROM                              CODE     H'0900:B938 - H'0900:BBCB
+      5  INIT                                CODE     H'0900:BBCC - H'0900:C143
+      6  USER                                CODE     H'0900:916C - H'0900:B937
+      7  USER2                               CODE     H'0900:16F0 - H'0900:28F7
+      8  SSL                                 CODE     H'0900:28F8 - H'0900:5087
+      9  SPEED                               CODE     H'0900:5088 - H'0900:52E7
+     10  PI                                  CODE     H'0900:0404 - H'0900:04B3
+     11  ADAPT                               CODE     H'0900:1464 - H'0900:15DF
+     12  DEADTC                              CODE     H'0900:04B4 - H'0900:0757
+     13  DEADTNEW                            CODE     H'0900:0758 - H'0900:0923
+     14  IUV_IN                              CODE     H'0900:15E0 - H'0900:16EF
+     15  SINTAB                              CODE     H'0900:C144 - H'0900:CC83
+     16  ABCD_I                              CODE     H'0900:CC84 - H'0900:F98B
+     17  ATAN                                CODE     H'0900:0924 - H'0900:1463
+
+
+
+**    Symbol(s) list.
+
+        SYMBOL NAME                                    ADDR           TYPE
+        OLDKEY                                         H'0FFF:F368    DAT
+        _W_STATUS                                      H'0FFF:F379    DAT
+        _ERR_FLUX                                      H'0FFF:F24C    DAT
+        INITPWM                                        H'0900:BDF0    DAT
+        PARA_SET                                       H'0900:A60C    DAT
+        _SEG                                           H'0FFF:F0B8    DAT
+        ACC_TIM                                        H'0FFF:F114    DAT
+        _TCOUNT                                        H'0FFF:F364    DAT
+        _UCX_OLD                                       H'0FFF:F22C    DAT
+        LOOP                                           H'0900:6310    DAT
+        KEYDLY                                         H'0FFF:F36D    DAT
+        _DMAX                                          H'0FFF:F17C    DAT
+        DBOUNCE                                        H'0FFF:F36B    DAT
+        _V_STEP                                        H'0FFF:F344    DAT
+        WRITE_PARA                                     H'0900:1F9C    DAT
+        _IQ_COM                                        H'0FFF:F054    DAT
+        _TXI0                                          H'0900:0400    DAT
+        ADPT_CON                                       H'0900:1464    DAT
+        DEADT_COM                                      H'0900:04B4    DAT
+        _TXI1                                          H'0900:0400    DAT
+        _LEVEL_I                                       H'0FFF:F346    DAT
+        _ID_ERR                                        H'0FFF:F064    DAT
+        _INVALID_SLOT                                  H'0900:0400    DAT
+        _DIGIT                                         H'0FFF:F361    DAT
+        ACC_REMEND                                     H'0FFF:F292    DAT
+        PROGRAM                                        H'0900:A654    DAT
+        _ID_EST                                        H'0FFF:F050    DAT
+        _REMAINDER                                     H'0FFF:F1A0    DAT
+        DTIME_NEW                                      H'0900:0758    DAT
+        _RATIO                                         H'0FFF:F2CA    DAT
+        _ACC_END                                       H'0FFF:F128    DAT
+        CHK_SUM                                        H'0900:BB6E    DAT
+        MSEC                                           H'0FFF:F276    DAT
+        READ_AD                                        H'0900:15E0    DAT
+        _D_REMAINDER                                   H'0FFF:F1A4    DAT
+        _VAR                                           H'0FFF:F09C    DAT
+        IUV2DQ                                         H'0900:16F0    DAT
+        _DEC_START                                     H'0FFF:F138    DAT
+        _UCX                                           H'0FFF:F084    DAT
+        _AD_BAK                                        H'0FFF:F0D4    DAT
+        SET_WM                                         H'0FFF:F0DC    DAT
+        TIP_TYP                                        H'0FFF:F37E    DAT
+        _UCY                                           H'0FFF:F088    DAT
+        KEYCODE                                        H'0FFF:F369    DAT
+        _D_KRATE1                                      H'0FFF:F158    DAT
+        _RPM                                           H'0FFF:F2D6    DAT
+        TIV                                            H'0FFF:F2E4    DAT
+        _D_KRATE2                                      H'0FFF:F15C    DAT
+        TMP_DIG                                        H'0FFF:F363    DAT
+        PULSE_DLY                                      H'0FFF:F32E    DAT
+        _F_MAX                                         H'0FFF:F25A    DAT
+        AMPERE                                         H'0FFF:F1BC    DAT
+        _DIG_TOG                                       H'0FFF:F393    DAT
+        _CODE_COUNT                                    H'0FFF:F394    DAT
+        _ACC_START                                     H'0FFF:F120    DAT
+        IDQSCL9T                                       H'0FFF:F326    DAT
+        _INVALID_COMMAND                               H'0900:0400    DAT
+        _CL_TIME                                       H'0FFF:F1D4    DAT
+        _VER                                           H'0FFF:F38F    DAT
+        SCAN                                           H'0900:88FC    DAT
+        _IQ_ERR                                        H'0FFF:F06C    DAT
+        _STR_FRE2                                      H'0FFF:F2C0    DAT
+        _VDC_OLD                                       H'0FFF:F228    DAT
+        _ATANTAB                                       H'0900:0924    DAT
+        DEL_DEC1                                       H'0FFF:F382    DAT
+        _TORQUE_COM                                    H'0FFF:F200    DAT
+        WM_COM_MIN                                     H'0900:15D0    DAT
+        _DISP_TYPE                                     H'0FFF:F36F    DAT
+        PULSE                                          H'0FFF:F2A2    DAT
+        _IQ_EST                                        H'0FFF:F058    DAT
+        _ID_REAL                                       H'0FFF:F060    DAT
+        _L_STATORT                                     H'0FFF:F318    DAT
+        _FR_COUNT                                      H'0FFF:F397    DAT
+        STATOR_T                                       H'0FFF:F2F4    DAT
+        _P_STATUS                                      H'0FFF:F371    DAT
+        STEP_TIM                                       H'0FFF:F28E    DAT
+        R_LT                                           H'0FFF:F324    DAT
+        _R_STATOR                                      H'0FFF:F2E8    DAT
+        _WM_EST                                        H'0FFF:F038    DAT
+        ACCJ_TIM                                       H'0FFF:F298    DAT
+        I_RMS                                          H'0FFF:F1B4    DAT
+        RPM_SCALE                                      H'0FFF:F38C    DAT
+        _S_TIMER                                       H'0FFF:F348    DAT
+        _RPOS_1                                        H'0FFF:F0C0    DAT
+        _ID_RE0                                        H'0FFF:F044    DAT
+        _RPOS_2                                        H'0FFF:F0C4    DAT
+        _RPOS_3                                        H'0FFF:F0C8    DAT
+        _IMR_EST                                       H'0FFF:F05C    DAT
+        _RPOS_4                                        H'0FFF:F0CC    DAT
+        _AD_DAT                                        H'0FFF:F27C    DAT
+        _TBASE                                         H'0FFF:F27E    DAT
+        _RE_TIME                                       H'0FFF:F2D0    DAT
+        SPD_CAL                                        H'0900:5088    DAT
+        _SINCOS                                        H'0900:C144    DAT
+        _CLOCK                                         H'0FFF:F240    DAT
+        _T_BOOST                                       H'0FFF:F2B4    DAT
+        _BT_DAT                                        H'0FFF:F2E6    DAT
+        _ERI0                                          H'0900:0400    DAT
+        P_V                                            H'0FFF:F0F0    DAT
+        _ERI1                                          H'0900:0400    DAT
+        KEYDELAY                                       H'0FFF:F36C    DAT
+        _FLUX_COUNT                                    H'0FFF:F399    DAT
+        _VD_COM                                        H'0FFF:F07C    DAT
+        IDQSCL9                                        H'0FFF:F302    DAT
+        _F_OLD                                         H'0FFF:F1AC    DAT
+        DEL_DECJ                                       H'0FFF:F385    DAT
+        LOOP1                                          H'0900:5A4C    DAT
+        _FAC_COUNT                                     H'0FFF:F38D    DAT
+        _TIME_D                                        H'0FFF:F34A    DAT
+        _R_STATUS                                      H'0FFF:F373    DAT
+        DISP_BAK                                       H'0FFF:F0BC    DAT
+        R_L                                            H'0FFF:F2F6    DAT
+        _TIMES                                         H'0FFF:F304    DAT
+        _L_ROTORT                                      H'0FFF:F31A    DAT
+        FSET_B                                         H'0FFF:F258    DAT
+        _F_JUMP1                                       H'0FFF:F260    DAT
+        MC_MUL                                         H'0FFF:F2D4    DAT
+        _WEIGHT                                        H'0FFF:F336    DAT
+        _FMIN                                          H'0FFF:F34C    DAT
+        _F_JUMP2                                       H'0FFF:F262    DAT
+        ACC1_TIM                                       H'0FFF:F118    DAT
+        _F_JUMP3                                       H'0FFF:F264    DAT
+        MC_SAT                                         H'0FFF:F1F4    DAT
+        _DEC_END_R                                     H'0FFF:F14C    DAT
+        INCREA_                                        H'0FFF:F0FC    DAT
+        SYSFLG                                         H'0FFF:F26A    DAT
+        _ACC_LIN                                       H'0FFF:F124    DAT
+        _STR_FRE                                       H'0FFF:F2BE    DAT
+        TRX1WORD                                       H'0900:BC3C    DAT
+        _IU_REAL                                       H'0FFF:F048    DAT
+        LCHK_SP                                        H'0FFF:F286    DAT
+        _IQ_COM0                                       H'0FFF:F02C    DAT
+        S_P                                            H'0FFF:F0F4    DAT
+        _UCY_OLD                                       H'0FFF:F230    DAT
+        _WSL                                           H'0FFF:F04C    DAT
+        _ACC_END_R                                     H'0FFF:F134    DAT
+        _F_SAT                                         H'0FFF:F25C    DAT
+        _AD_CNT                                        H'0FFF:F372    DAT
+        _DEC_LIN_R                                     H'0FFF:F148    DAT
+        SUM_OL                                         H'0FFF:F1C4    DAT
+        MOTOR_PARA                                     H'0900:BFE4    DAT
+        _T_STATUS                                      H'0FFF:F376    DAT
+        _A_FIL                                         H'0FFF:F352    DAT
+        _I_TEMP                                        H'0FFF:F2F8    DAT
+        RPSCL                                          H'0FFF:F300    DAT
+        _TEI0                                          H'0900:0400    DAT
+        _ADI                                           H'0900:0400    DAT
+        _ID_0WS                                        H'0FFF:F020    DAT
+        _ACC_LIN_R                                     H'0FFF:F130    DAT
+        PWM_GEN                                        H'0900:2108    DAT
+        _TEI1                                          H'0900:0400    DAT
+        _VQ_COM                                        H'0FFF:F080    DAT
+        INITIALIZE                                     H'0900:1C4C    DAT
+        IUV2XY                                         H'0900:178A    DAT
+        INT_COUNT                                      H'0FFF:F386    DAT
+        _IQ_K_1                                        H'0FFF:F03C    DAT
+        _IQ_K_2                                        H'0FFF:F040    DAT
+        _VD_COM_OLD                                    H'0FFF:F220    DAT
+        INIT_FOUT                                      H'0900:BEB8    DAT
+        _WSL_0                                         H'0FFF:F014    DAT
+        _FIL_TIME                                      H'0FFF:F33C    DAT
+        _POLE                                          H'0FFF:F38B    DAT
+        FSET                                           H'0FFF:F250    DAT
+        _INITIAL1                                      H'0FFF:F168    DAT
+        TEST_VF                                        H'0FFF:F37B    DAT
+        _INITIAL2                                      H'0FFF:F16C    DAT
+        _USER_BREAK                                    H'0900:0400    DAT
+        ROUND                                          H'0FFF:F0F8    DAT
+        _ACCUI                                         H'0FFF:F1B8    DAT
+        _ID_0                                          H'0FFF:F01C    DAT
+        _D_INITIAL1                                    H'0FFF:F170    DAT
+        _UPPER                                         H'0FFF:F2CC    DAT
+        POINT                                          H'0FFF:F367    DAT
+        _D_INITIAL2                                    H'0FFF:F174    DAT
+        _OVI0                                          H'0900:0400    DAT
+        _OVI1                                          H'0900:0400    DAT
+        _KP_ADT                                        H'0FFF:F30A    DAT
+        _V_STATUS                                      H'0FFF:F378    DAT
+        DEC_TIM                                        H'0FFF:F28C    DAT
+        _OVI2                                          H'0900:51C0    DAT
+        _OVI3                                          H'0900:0400    DAT
+        _BRK_COUNT_S                                   H'0FFF:F2BC    DAT
+        MMSEC                                          H'0FFF:F28A    DAT
+        _KRATE1                                        H'0FFF:F150    DAT
+        _D_FACTOR                                      H'0FFF:F396    DAT
+        _OVI4                                          H'0900:2BAC    DAT
+        _SETA                                          H'0FFF:F074    DAT
+        INPORT                                         H'0FFF:F26E    DAT
+        _KRATE2                                        H'0FFF:F154    DAT
+        _TORQUE_0                                      H'0FFF:F208    DAT
+        _ID_REDUCE                                     H'0FFF:F218    DAT
+        _CL_COUNT                                      H'0FFF:F1D0    DAT
+        _BAND                                          H'0FFF:F34E    DAT
+        _SERIES                                        H'0FFF:F392    DAT
+        _FRUN_START                                    H'0FFF:F2C8    DAT
+        _IQ_0WS                                        H'0FFF:F028    DAT
+        _INITIALA                                      H'0FFF:F160    DAT
+        TAR_GET                                        H'0FFF:F391    DAT
+        FRE_TO_RPM                                     H'0900:18C0    DAT
+        FSET2                                          H'0FFF:F252    DAT
+        _OL2_COUNT                                     H'0FFF:F1C0    DAT
+        _SUM_I                                         H'0FFF:F244    DAT
+        _INITIALD                                      H'0FFF:F164    DAT
+        _SIGMA_L                                       H'0FFF:F2EE    DAT
+        _UCHK                                          H'0FFF:F2FC    DAT
+        _DELAY_MAG                                     H'0FFF:F398    DAT
+        _MANUAL_RESET_PC                               H'0900:52E8    DAT
+        ROTOR_TT                                       H'0FFF:F320    DAT
+        PROG                                           H'0FFF:F27A    DAT
+        _IU                                            H'0FFF:F008    DAT
+        _V_DC                                          H'0FFF:F098    DAT
+        MC_LAST                                        H'0FFF:F1F0    DAT
+        _PERCENT_STALL                                 H'0FFF:F354    DAT
+        _IV                                            H'0FFF:F00C    DAT
+        _F_TEMP                                        H'0FFF:F332    DAT
+        DEL_ACC                                        H'0FFF:F37F    DAT
+        _STEP_FRE                                      H'0FFF:F350    DAT
+        _IQ_REAL                                       H'0FFF:F068    DAT
+        _IX                                            H'0FFF:F0A8    DAT
+        _IY                                            H'0FFF:F0AC    DAT
+        _DEC_END                                       H'0FFF:F140    DAT
+        _POWER_RESET_PC                                H'0900:52E8    DAT
+        _IMR_0WS                                       H'0FFF:F034    DAT
+        _X_STATUS                                      H'0FFF:F37A    DAT
+        DECJ_TIM                                       H'0FFF:F29A    DAT
+        MC_SCALE                                       H'0FFF:F2D2    DAT
+        _SLIP_FRE                                      H'0FFF:F2DC    DAT
+        DBOUN                                          H'0FFF:F37C    DAT
+        _RPM_BACK                                      H'0FFF:F2E0    DAT
+        _R_ROTORT                                      H'0FFF:F31E    DAT
+        _SETA_OLD                                      H'0FFF:F21C    DAT
+        _TEMP                                          H'0FFF:F1E4    DAT
+        _CMI                                           H'0900:0400    DAT
+        EE_EN                                          H'0900:B938    DAT
+        _VAR1                                          H'0FFF:F0A0    DAT
+        FRUN                                           H'0FFF:F254    DAT
+        _VAR2                                          H'0FFF:F0A4    DAT
+        DELAY                                          H'0900:8C8C    DAT
+        _IMR_0                                         H'0FFF:F030    DAT
+        INT_LOOP                                       H'0FFF:F387    DAT
+        _D_DELTAF                                      H'0FFF:F19C    DAT
+        _TEN_COUNT                                     H'0FFF:F38A    DAT
+        _SETA_0                                        H'0FFF:F078    DAT
+        UD_COM1                                        H'0FFF:F29C    DAT
+        _VQ_COM_OLD                                    H'0FFF:F224    DAT
+        _DIG_CNT                                       H'0FFF:F362    DAT
+        UD_COM3                                        H'0FFF:F29E    DAT
+        _MANUAL_RESET_SP                               H'0FFF:FF90    DAT
+        _IU_OFF                                        H'0FFF:F000    DAT
+        UD_COM5                                        H'0FFF:F2A0    DAT
+        MSEC10_                                        H'0FFF:F180    DAT
+        _OH_COUNT                                      H'0FFF:F395    DAT
+        _MIX_TIME                                      H'0FFF:F23C    DAT
+        _IMIN                                          H'0FFF:F248    DAT
+        _DEC_START_R                                   H'0FFF:F144    DAT
+        _AMP_BACK                                      H'0FFF:F238    DAT
+        _POWER_RESET_SP                                H'0FFF:FF90    DAT
+        ACC2_TIM                                       H'0FFF:F11C    DAT
+        NUM_BER                                        H'0FFF:F390    DAT
+        _TORQUE_0WS                                    H'0FFF:F20C    DAT
+        IN_PORT2                                       H'0FFF:F389    DAT
+        _WMSCAL                                        H'0FFF:F288    DAT
+        DEC1_TIM                                       H'0FFF:F294    DAT
+        DISP_SWAP                                      H'0FFF:F280    DAT
+        PI_CON                                         H'0900:0404    DAT
+        START_F                                        H'0FFF:F266    DAT
+        _F_BIAS                                        H'0FFF:F25E    DAT
+        N_SHOW                                         H'0FFF:F365    DAT
+        _MUL_SP1                                       H'0FFF:F2A4    DAT
+        _FBACK                                         H'0FFF:F334    DAT
+        _MUL_SP2                                       H'0FFF:F2A6    DAT
+        R11_STUS                                       H'0FFF:F37D    DAT
+        _MUL_SP3                                       H'0FFF:F2A8    DAT
+        _L_ROTOR                                       H'0FFF:F2EC    DAT
+        _WM                                            H'0FFF:F010    DAT
+        _MUL_SP4                                       H'0FFF:F2AA    DAT
+        DEL_DEC                                        H'0FFF:F380    DAT
+        _MUL_SP5                                       H'0FFF:F2AC    DAT
+        _WO                                            H'0FFF:F070    DAT
+        _MUL_SP6                                       H'0FFF:F2AE    DAT
+        _MAX_BAND                                      H'0FFF:F310    DAT
+        MSEC102_                                       H'0FFF:F184    DAT
+        D_INCREA_                                      H'0FFF:F108    DAT
+        _MUL_SP7                                       H'0FFF:F2B0    DAT
+        _DATA_BUF                                      H'0FFF:F35C    DAT
+        EE_RD                                          H'0900:BB0C    DAT
+        BRA4B                                          H'0FFF:F272    DAT
+        MSEC103_                                       H'0FFF:F188    DAT
+        _VX                                            H'0FFF:F0B0    DAT
+        _VY                                            H'0FFF:F0B4    DAT
+        _STP_FRE                                       H'0FFF:F2C2    DAT
+        _RE_COUNT                                      H'0FFF:F1B0    DAT
+        _TI_ADTT                                       H'0FFF:F32A    DAT
+        _DEI0                                          H'0900:0400    DAT
+        _DEI1                                          H'0900:0400    DAT
+        _DEI2                                          H'0900:0400    DAT
+        BRB3B                                          H'0FFF:F270    DAT
+        _DEI3                                          H'0900:0400    DAT
+        _KP_ADTT                                       H'0FFF:F328    DAT
+        D_MSEC102_                                     H'0FFF:F194    DAT
+        SINCOS                                         H'0900:27B0    DAT
+        BRB4B                                          H'0FFF:F274    DAT
+        _T_COUNT                                       H'0FFF:F33A    DAT
+        _AMAX                                          H'0FFF:F178    DAT
+        D_MSEC103_                                     H'0FFF:F190    DAT
+        ROTOR_T                                        H'0FFF:F2F2    DAT
+        OLDDIG                                         H'0FFF:F36A    DAT
+        I_DERATE                                       H'0FFF:F1CC    DAT
+        _D_TIME                                        H'0FFF:F33E    DAT
+        _TORQUE_COM0                                   H'0FFF:F204    DAT
+        KEYPROC                                        H'0900:92A0    DAT
+        _LOWER                                         H'0FFF:F2CE    DAT
+        _R_ROTOR                                       H'0FFF:F2F0    DAT
+        _Q_STATUS                                      H'0FFF:F374    DAT
+        _DEL_FREQ                                      H'0FFF:F2DE    DAT
+        IMIA3                                          H'0900:2C2C    DAT
+        WG_FUNC                                        H'0900:1578    DAT
+        FLAST                                          H'0FFF:F256    DAT
+        MAXQ                                           H'0FFF:F0E4    DAT
+        _INC_TIME                                      H'0FFF:F358    DAT
+        _DMA_BUS_ERROR                                 H'0900:0400    DAT
+        TMPB                                           H'0FFF:F366    DAT
+        _REMAIN                                        H'0FFF:F1A8    DAT
+        PROG_ADD                                       H'0FFF:F36E    DAT
+        _I_GAINT                                       H'0FFF:F312    DAT
+        _NO_OP                                         H'0FFF:F330    DAT
+        _FLUX_KP                                       H'0FFF:F35A    DAT
+        _RPOS                                          H'0FFF:F018    DAT
+        IQ_LIM                                         H'0FFF:F32C    DAT
+        _DEC_LIN                                       H'0FFF:F13C    DAT
+        _STALL                                         H'0FFF:F388    DAT
+        MC_TO_FRE                                      H'0900:19F0    DAT
+        _IRQ0                                          H'0900:0400    DAT
+        _FIL_AMP                                       H'0FFF:F234    DAT
+        _IRQ1                                          H'0900:0400    DAT
+        _BRK_COUNT                                     H'0FFF:F2B8    DAT
+        FRE_TO_WM                                      H'0900:1B84    DAT
+        _IRQ2                                          H'0900:28F8    DAT
+        _IRQ3                                          H'0900:0400    DAT
+        _TI_ADT                                        H'0FFF:F30C    DAT
+        EE_WR                                          H'0900:BA54    DAT
+        _IRQ4                                          H'0900:0400    DAT
+        KP_SP                                          H'0FFF:F282    DAT
+        _IRQ5                                          H'0900:0400    DAT
+        _DISP_TB                                       H'0FFF:F370    DAT
+        DEL_ACC1                                       H'0FFF:F381    DAT
+        INIT_SSC                                       H'0900:BBCC    DAT
+        _IRQ6                                          H'0900:0400    DAT
+        DEL_ACC2                                       H'0FFF:F383    DAT
+        RPM_TO_FRE                                     H'0900:19AC    DAT
+        _IRQ7                                          H'0900:0400    DAT
+        _I_GAIN                                        H'0FFF:F306    DAT
+        INCREA2_                                       H'0FFF:F100    DAT
+        _TRAPA_00                                      H'0900:0400    DAT
+        _TRAPA_01                                      H'0900:0400    DAT
+        _WMSCL                                         H'0FFF:F2FE    DAT
+        _TRAPA_02                                      H'0900:0400    DAT
+        INCREA3_                                       H'0FFF:F104    DAT
+        _TRAPA_03                                      H'0900:0400    DAT
+        _TRAPA_10                                      H'0900:0400    DAT
+        _S_STATUS                                      H'0FFF:F375    DAT
+        _RPM_LAST                                      H'0FFF:F2D8    DAT
+        _MC_BACK                                       H'0FFF:F1F8    DAT
+        _TRAPA_04                                      H'0900:0400    DAT
+        _TRAPA_11                                      H'0900:0400    DAT
+        RPM_SAT                                        H'0FFF:F2DA    DAT
+        _TRAPA_05                                      H'0900:0400    DAT
+        _TRAPA_12                                      H'0900:0400    DAT
+        _TRAPA_06                                      H'0900:0400    DAT
+        _TRAPA_13                                      H'0900:0400    DAT
+        _RXI0                                          H'0900:0400    DAT
+        _TRAPA_07                                      H'0900:0400    DAT
+        _TRAPA_14                                      H'0900:0400    DAT
+        _RXI1                                          H'0900:0400    DAT
+        BLNKT                                          H'0FFF:F26C    DAT
+        _FRE_TUNE                                      H'0FFF:F308    DAT
+        _SSL_DUTYE                                     H'0FFF:F39B    DAT
+        _TRAPA_08                                      H'0900:0400    DAT
+        _TRAPA_15                                      H'0900:0400    DAT
+        _TRAPA_09                                      H'0900:0400    DAT
+        _TRAPA_16                                      H'0900:0400    DAT
+        _ITI                                           H'0900:0400    DAT
+        SCALZ                                          H'0FFF:F0EC    DAT
+        _TRAPA_17                                      H'0900:0400    DAT
+        D_INCREA2_                                     H'0FFF:F10C    DAT
+        _ISD_RATED                                     H'0FFF:F1DC    DAT
+        _TRAPA_18                                      H'0900:0400    DAT
+        _SIGMA_LT                                      H'0FFF:F31C    DAT
+        _TRAPA_19                                      H'0900:0400    DAT
+        D_INCREA3_                                     H'0FFF:F110    DAT
+        _VBASE                                         H'0FFF:F0D0    DAT
+        _ACC_START_R                                   H'0FFF:F12C    DAT
+        _TEMP3                                         H'0FFF:F1E8    DAT
+        _S_COUNT                                       H'0FFF:F338    DAT
+        SHOW_R10_D                                     H'0900:916C    DAT
+        _JOG_SP                                        H'0FFF:F2B2    DAT
+        _ISQ_RATED                                     H'0FFF:F1E0    DAT
+        STORE_TEMP                                     H'0900:1F28    DAT
+        _TRAPA_0A                                      H'0900:0400    DAT
+        _TIME_LAG                                      H'0FFF:F314    DAT
+        _TRAPA_0B                                      H'0900:0400    DAT
+        _TRAPA_0C                                      H'0900:0400    DAT
+        STOP_F                                         H'0FFF:F268    DAT
+        DEL_ACCJ                                       H'0FFF:F384    DAT
+        _TRAPA_0D                                      H'0900:0400    DAT
+        _TRAPA_1A                                      H'0900:0400    DAT
+        PROG_DAT                                       H'0FFF:F2FA    DAT
+        _TRAPA_0E                                      H'0900:0400    DAT
+        _TRAPA_1B                                      H'0900:0400    DAT
+        _SSL_DUTYS                                     H'0FFF:F39A    DAT
+        _TRAPA_0F                                      H'0900:0400    DAT
+        _TRAPA_1C                                      H'0900:0400    DAT
+        _IQ_0                                          H'0FFF:F024    DAT
+        _V_DCIN                                        H'0FFF:F08C    DAT
+        REM_DER                                        H'0FFF:F290    DAT
+        _ISD_RATEDT                                    H'0FFF:F210    DAT
+        _TRAPA_1D                                      H'0900:0400    DAT
+        _IMIA0                                         H'0900:0400    DAT
+        _ANGSL_0                                       H'0FFF:F0D8    DAT
+        KPV                                            H'0FFF:F2E2    DAT
+        _DELTAF                                        H'0FFF:F198    DAT
+        _TRAPA_1E                                      H'0900:0400    DAT
+        _IMIA1                                         H'0900:0400    DAT
+        _STOPTIME                                      H'0FFF:F2BA    DAT
+        _TRAPA_1F                                      H'0900:0400    DAT
+        MINQ                                           H'0FFF:F0E8    DAT
+        _U_STATUS                                      H'0FFF:F377    DAT
+        _T_TIME                                        H'0FFF:F340    DAT
+        _IMIA2                                         H'0900:51E6    DAT
+        _IMIB0                                         H'0900:0400    DAT
+        _IV_OFF                                        H'0FFF:F004    DAT
+        _DUTYE                                         H'0FFF:F2C6    DAT
+        _IMIA3                                         H'0900:2A42    DAT
+        _IMIB1                                         H'0900:0400    DAT
+        _IMIA4                                         H'0900:0400    DAT
+        _PEI                                           H'0900:0400    DAT
+        _IMIB2                                         H'0900:0400    DAT
+        _IMIB3                                         H'0900:0400    DAT
+        I_INV                                          H'0FFF:F1D8    DAT
+        _IMIB4                                         H'0900:0400    DAT
+        _COUNT                                         H'0FFF:F0E0    DAT
+        _BRK_TIME                                      H'0FFF:F2B6    DAT
+        STATOR_TT                                      H'0FFF:F322    DAT
+        _G_DC                                          H'0FFF:F1FC    DAT
+        DQ_3PHS                                        H'0900:06A8    DAT
+        _NMI                                           H'0900:0400    DAT
+        I_MOTOR                                        H'0FFF:F1C8    DAT
+        FUNCTION                                       H'0900:56E8    DAT
+        DEC2_TIM                                       H'0FFF:F296    DAT
+        D_MSEC10_                                      H'0FFF:F18C    DAT
+        _L_STATOR                                      H'0FFF:F2EA    DAT
+        _MIN_BAND                                      H'0FFF:F30E    DAT
+        _COUNT_UP                                      H'0FFF:F356    DAT
+        _CPU_BUS_ERROR                                 H'0900:0400    DAT
+        UCHK_SP                                        H'0FFF:F284    DAT
+        _ISQ_RATEDT                                    H'0FFF:F214    DAT
+        _ABCD_I                                        H'0900:CC84    DAT
+        _CODE                                          H'0FFF:F38E    DAT
+        _R_STATORT                                     H'0FFF:F316    DAT
+        _DUTYS                                         H'0FFF:F2C4    DAT
+        MC_SPEED                                       H'0FFF:F1EC    DAT
+        SQ_ROOT                                        H'0900:1848    DAT
+        _SEARCH_T                                      H'0FFF:F342    DAT
+        SEC                                            H'0FFF:F278    DAT
+
+
+
+**    End of list file.

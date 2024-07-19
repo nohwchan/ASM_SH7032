@@ -1,0 +1,52 @@
+;********************************************
+;------------GAIN OF VDC SETTING------------*
+;********************************************
+        MOV USTATUS_2,R1
+	MOV.B @R1,R0
+	TST #B'10000000,R0
+	BT  OUT_GDC_SET
+	MOV PROGDATA,R1
+	MOV.W @R1,R0
+	CMP/EQ #1,R0
+	BF  CLEAR61
+
+	MOV #0,R0
+	MOV.W R0,@R1 
+        MOV READAD,R14
+        JSR @R14;READ_AD
+        NOP
+        MOV VDC_BASE,R1
+        DIVS R5,R1
+        MOV #99,R11
+        MOV R1,R10
+	MOV G_DC,R5
+	MOV R1,@R5
+        MOV EEWRITE,R14
+        JSR @R14;EE_WR
+        NOP
+	BRA OUT_GDC_SET
+	NOP
+CLEAR61:	
+	MOV USTATUS_2,R1
+	MOV.B @R1,R0
+	AND #B'01111111,R0
+	MOV.B R0,@R1
+        MOV #61,R11
+        MOV #0,R10
+        MOV EEWRITE,R14
+        JSR @R14;EE_WR
+        NOP
+	BRA OUT_GDC_SET
+	NOP
+
+	.ALIGN 4
+READAD:		.DATA.L READ_AD
+VDC_BASE:	.DATA.L 2489000;2640000;(FACTOR*2489000 FOR NOT OVERMOD.);OVERMOD1
+PROGDATA:	.DATA.L PROG_DAT
+USTATUS_2:	.DATA.L _U_STATUS
+G_DC:		.DATA.L _G_DC
+	.ALIGN 4
+OUT_GDC_SET:
+
+
+	

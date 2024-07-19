@@ -1,0 +1,894 @@
+;******************************************************
+;       This is the user function for initial pwm
+; Copyright (C) SSR. A.P.Y. ENGINEERING CO.,LTD., 1994.
+;          ALL right reserved.
+;  Date : 7/12/1995
+;******************************************************
+        .EXPORT  INITPWM,INIT_FOUT,INIT_SSC,TRX1WORD,MOTOR_PARA
+	.IMPORT  EE_RD
+        .INCLUDE "RAM_IMP.H"
+	.INCLUDE "MACRO.H"
+        .SECTION INIT,CODE,ALIGN=4
+
+;*****************************************************************************
+;
+; Specify  :  INITIAL SERIAL COMMUNICATION
+;
+; Argument :  NONE
+;
+; Return   : NONE
+;
+; Use Reg. : ALL REG.
+;*****************************************************************************
+                .ALIGN 4
+INIT_SSC:
+
+        STS.L   PR,@-SP
+
+        MOV     _PAIOR,R0                ;SET PORT A I/O REGISTER
+        MOV     PAOUTP,R1
+        MOV.W   @R0,R11
+        OR      R1,R11
+        MOV.W   R11,@R0
+
+        MOV     _PBIOR,R0                ;SET PORT B I/O REG.
+        MOV     PBOUTP,R1
+        MOV.W   @R0,R11
+        OR      R1,R11
+        MOV.W   R11,@R0
+
+        MOV.L   PBDR_H,R11
+        MOV.B   @R11,R0
+        OR      #B'11000000,R0
+        MOV.B   R0,@R11
+
+        MOV.L   PBDR_L,R11
+        MOV.B   @R11,R0
+        OR      #B'11111111,R0
+        MOV.B   R0,@R11
+
+        MOV     PBCR1,R0                ;SET PORT B CONTROL REG.
+        MOV     PBCON,R1
+        MOV.W   @R0,R11
+        OR      R1,R11
+        MOV.W   R11,@R0
+
+        MOV     _PACR1,R0               ;SET PORT A CONTROL REG.
+        MOV     PACON,R1
+        MOV.W   @R0,R11
+        OR      R1,R11
+	MOV	PACON3,R1
+	AND	R1,R11
+        MOV.W   R11,@R0
+	
+        MOV.L   PADR_H,R11
+        MOV.B   @R11,R0
+;       OR      #B'00000010,R0
+	OR	#B'11000100,R0		;OLD=#B'11001100--->INIT CS FOR EE=1-->NOISE!!--->EE HAS BEEN WRITE!!!
+        MOV.B   R0,@R11
+
+;        MOV.L   PADR_L,R11
+;        MOV.B   @R11,R0
+;        OR      #B'00110111,R0
+;        MOV.B   R0,@R11
+
+        MOV     _PACR2,R0               ;SET PORT A CONTROL REG.
+        MOV     PACON2,R1
+        MOV.W   @R0,R11
+        MOV     R1,R11
+        MOV.W   R11,@R0
+
+        MOV.L SMR1,R11                  ;SET R11 TO ADDRS. OF SMR1
+        MOV #B'10111100,R0              ;SET MODE
+        MOV.B R0,@R11                   ;R0->@R11
+
+        MOV.L BRR1,R11
+        MOV #19,R0
+        MOV.B R0,@R11
+
+        MOV.L SMR0,R11                  ;SET R11 TO ADDRS. OF SMR1
+        MOV #B'10111100,R0              ;SET MODE
+        MOV.B R0,@R11                   ;R0->@R11
+
+        MOV.L BRR0,R11
+        MOV #4,R0
+        MOV.B R0,@R11
+
+        LDS.L @SP+,PR
+        RTS
+        NOP
+
+;*****************************************************************************
+;
+; Specify  :  TRANSMIT WORD DATA
+;
+; Argument :  R10 DATA TO BE TX;R9 CH0 OR 1
+;
+; Return   :  NONE
+;
+; Use Reg. :  NONE
+;*****************************************************************************
+                .ALIGN 4
+TRX1WORD:
+            STS.L PR,@-SP
+            MOV   R0,@-SP
+            MOV   R1,@-SP
+            MOV   R2,@-SP
+            MOV   R3,@-SP
+            MOV   R4,@-SP
+            MOV   R11,@-SP
+
+            MOV.L SCR0,R1
+            MOV.L SSR0,R11
+            MOV.L TDR0,R2            ;
+
+TX1W1:
+            MOV   #B'00110000,R0
+            MOV.B R0,@R1             ;R0->@R11
+
+            MOV   #0,R0
+            MOV.B R0,@R11
+
+VALID:      MOV.B @R11,R0
+            TST   #H'80,R0         ;80H&R0 IF = 0 ,T=1
+            BT    VALID            ;SSR1.7=0 VALID DATA
+
+            MOV.B R10,@R2          ;TRANSMIT
+
+            AND   #B'01111111,R0
+            MOV.B R0,@R11
+BRA TR_CON
+NOP
+;*******************************************
+; RECEIVE PROCESS LOW
+;*******************************************
+RX_PROC:    MOV.B   @R11,R0
+            TST     #B'00100000,R0 ;
+            BT      RX_START       ;IF SSR0.5=0 JMP RX START
+            ;ERROR HANDERING
+            AND     #B'11011111,R0
+            MOV.B   R0,@R11
+RX_START:   MOV.B   @R11,R0
+            TST     #B'01000000,R0 ;
+            BT      RX_PROC        ;IF SSR0.6=0 JMP RX PROC
+            MOV     RDR0,R3
+            MOV     #0,R4
+            MOV.B   @R3,R4
+
+	MOV INPORT1,R3
+	MOV.W R4,@R3
+
+            AND     #B'10111111,R0
+            MOV.B   R0,@R11
+;*******************************************
+
+TR_CON:     MOV.B   @R11,R0
+            TST     #B'00000100,R0 ;
+            BT      TR_CON         ;IF SSR0.2=0 JMP TR_CON (TX IN PROGRESS)
+
+            MOV     R10,R1
+            SHLR8   R1
+            MOV.B   R1,@R2
+
+            AND     #B'01111111,R0
+            MOV.B   R0,@R11
+BRA TR_CONH
+NOP
+;*******************************************
+; RECEIVE PROCESS HIGH
+;*******************************************
+RX_PROCH:   MOV.B   @R11,R0
+            TST     #B'00100000,R0 ;
+            BT      RX_STARTH       ;IF SSR0.5=0 JMP RX START
+            ;ERROR HANDERING
+            AND     #B'11011111,R0
+            MOV.B   R0,@R11
+RX_STARTH:  MOV.B   @R11,R0
+            TST     #B'01000000,R0 ;
+            BT      RX_PROCH        ;IF SSR0.6=0 JMP RX PROC
+            MOV     RDR0,R3
+            ;SHLL8   R4
+            MOV     #0,R10
+            MOV.B   @R3,R10
+;           SHLL8   R10
+;           OR      R4,R10
+;           MOV     INPORT1,R4
+;           MOV.W   R10,@R4
+
+	MOV INPORT2,R4
+	MOV.B R10,@R4
+
+            AND     #B'10111111,R0
+            MOV.B   R0,@R11
+;*******************************************
+
+TR_CONH:    MOV.B   @R11,R0
+            TST     #B'00000100,R0
+            BT      TR_CONH
+
+;            MOV.L   PADR_H,R11
+;            MOV.B   @R11,R0
+;            OR      #B'00001000,R0
+;            MOV.B   R0,@R11
+
+	    MOV	    PBDR_H,R11
+	    MOV.B   @R11,R0
+	    OR      #B'1,R0
+	    MOV.B   R0,@R11
+
+            MOV.L   SCR0,R1             ;SET R0 TO ADDRS. OF SCR1
+;           MOV.L   PADR_H,R11
+;	    MOV.L   PBDR_H,R11
+
+            MOV.B   @R1,R0
+            AND     #B'11001111,R0
+            MOV.B   R0,@R1              ;R0->@R11
+
+            MOV.B   @R11,R0
+;           AND     #B'11110111,R0
+	    AND	    #B'11111110,R0
+            MOV.B   R0,@R11
+
+
+;RECEIVE PORT A FOR EXTERNAL TERMINAL
+
+	    MOV	    PADR_L,R1
+;	    MOV.B   @R1,R0
+;	    AND	    #B'00000001,R0
+;	    SHLL2   R0
+;	    SHLL2   R0
+;	    SHLL    R0
+	    MOV     #0,R2
+;	    OR	    R0,R2
+	    MOV.B   @R1,R0
+	    AND     #B'00000010,R0
+	    SHLL2   R0
+	    SHLL    R0
+	    OR	    R0,R2
+	    MOV.B   @R1,R0
+	    AND     #B'00000100,R0
+	    SHLL2   R0
+	    SHLL    R0
+	    OR      R0,R2
+	    MOV.B   @R1,R0
+	    AND     #B'00001000,R0
+	    SHLR    R0
+	    OR	    R0,R2
+	    MOV	    PADR_H,R3
+	    MOV.B   @R3,R0
+	    AND	    #B'00000100,R0
+	    SHLL    R0
+	    OR	    R0,R2
+	    MOV.B   @R3,R0
+	    AND     #B'00000001,R0
+	    SHLL2   R0
+	    SHLL2   R0
+	    SHLL2   R0
+	    SHLL    R0
+	    OR      R0,R2
+	    MOV.B   @R3,R0
+	    AND     #B'00000010,R0
+	    SHLL2   R0
+	    SHLL2   R0
+	    SHLL    R0
+;	    OR	    R2,R0
+OR  R0,R2
+MOV PCLOW,R3
+MOV.B @R3,R0
+AND #B'00100000,R0
+SHLR2 R0
+SHLR2 R0
+OR R0,R2 
+MOV.B @R3,R0
+AND #B'01000000,R0
+SHLR2 R0
+SHLR2 R0
+SHLR2 R0
+OR R2,R0
+
+;	    OR	    #B'11,R0		;ESPECIALLY TODAY
+
+	    MOV	    INPORT1,R2
+	    MOV.W   R0,@R2
+	;MOV.B    @R1,R0
+	MOV	CS2,R0
+	MOV.B	@R0,R0
+	AND     #B'00100000,R0
+	;SHLL    R0
+	    MOV     #0,R2
+	    OR	    R0,R2
+	;MOV.B   @R1,R0
+	MOV	CS2,R0
+	MOV.B	@R0,R0
+	AND     #B'01000000,R0
+	SHLL    R0
+	    OR	    R0,R2
+	    MOV.B   @R1,R0
+	    AND    #B'10000000,R0
+	    SHLR2   R0
+	    SHLR    R0
+;	    OR	    R2,R0
+;	    AND    #B'10110111,R0
+OR R0,R2
+MOV.B @R3,R0
+AND #B'10000000,R0
+SHLR R0
+OR R2,R0
+AND #B'11110111,R0 
+
+;AND #B'10110111,R0		;ESPECIALLY TODAY
+
+	    MOV	    INPORT2,R2
+	    MOV.B   R0,@R2
+
+	    
+            MOV     @SP+,R11
+            MOV     @SP+,R4
+            MOV     @SP+,R3
+            MOV     @SP+,R2
+            MOV     @SP+,R1
+            MOV     @SP+,R0
+            LDS.L   @SP+,PR
+            RTS
+            NOP
+
+            .ALIGN 4
+
+SMR0:       .DATA.L H'05FFFEC0
+BRR0:       .DATA.L H'05FFFEC1
+SCR0:       .DATA.L H'05FFFEC2
+TDR0:       .DATA.L H'05FFFEC3
+SSR0:       .DATA.L H'05FFFEC4
+RDR0:       .DATA.L H'05FFFEC5
+
+SMR1:       .DATA.L H'05FFFEC8
+BRR1:       .DATA.L H'05FFFEC9
+SCR1:       .DATA.L H'05FFFECA
+TDR1:       .DATA.L H'05FFFECB
+SSR1:       .DATA.L H'05FFFECC
+RDR1:       .DATA.L H'05FFFECD
+
+PBCR1:      .DATA.L H'05FFFFCC
+PBCON:      .DATA.L H'00000208;H'20A
+_PBIOR:     .DATA.L H'05FFFFC6
+PBDR_H:     .DATA.L H'05FFFFC2
+PBDR_L:     .DATA.L H'05FFFFC3
+PBOUTP:     .DATA.L H'0000FBFF;H'0000FAFF
+
+_PACR1:     .DATA.L H'05FFFFC8
+PACON:      .DATA.L H'00000A02;H'00000A22
+PACON3:	    .DATA.L H'CFFF
+_PACR2:     .DATA.L H'05FFFFCA
+PACON2:     .DATA.L H'0000BF02;H'0000BA02;H'0000FA81
+_PAIOR:     .DATA.L H'05FFFFC4
+PADR_H:     .DATA.L H'05FFFFC0
+PADR_L:     .DATA.L H'05FFFFC1
+PCLOW:	    .DATA.L H'05FFFFD1
+PAOUTP:     .DATA.L H'FFFFC841;H'FFFF8BFF
+CS2:	    .DATA.L H'02000000
+INPORT1:    .DATA.L INPORT
+INPORT2:    .DATA.L IN_PORT2
+;*****************************************************************************
+;
+;       This is the user function
+; Copyright (C) Surapong Suwankawin, 1994.
+;          ALL right reserved.
+;  Date : 7/12/1995
+;*****************************************************************************
+        .ALIGN 4
+;*****************************************************************************
+;
+; Specify  :  INITIAL TIMMER FOR PWM COMPLEMENTARY MODE
+;
+; Argument :  NONE
+;
+; Return   : NONE
+;
+; Use Reg. : ALL REG.
+;*****************************************************************************
+
+INITPWM:
+
+;***** INITIALIZE SPEED CALCULATION ***********
+;BRA INITPWM1
+;NOP
+
+                MOV     #H'60,R10               ;SET TSTR TO STOP TIMER
+                MOV     TSTR,R0                 ; -TCNT3,TCNT4,TCNT2,TCNT1
+                MOV.B   R10,@R0                 ;LOOK AT PAGE 216!!!!!
+
+                MOV     #H'40,R10               ;SET TMDR TO INIT TCLKA,TCLKB
+                MOV     TMDR,R0                 ;AND OVER/UNDER FLOW CONDITION
+                MOV.B   R10,@R0                 ;LOOK AT PAGE 219!!!!!
+
+                MOV     #H'FD,R10		;ENABLES INTERRUPT REQUEST
+                MOV     TIER2,R0                ;FROM THE OVF AND IMIEA BIT
+                MOV.B   R10,@R0                 ;SEE PAGE 232 !!!!
+
+                MOV     #H'20,R10               ;SET TCR2 TO CLEAR TCNT2
+                MOV     TCR2,R0                 ;AFTER GRA2 COMPARE MATCH
+                MOV.B   R10,@R0                 ;LOOK AT PAGE 227 (ENGLISH)
+
+                MOV     MAXANG,R10              ;BRING THE MAXIMUM ANGLE
+		MOV.W	@R10,R10
+                MOV     GRA2,R0                 ;FOR GRA2 FOR COMPARE MATCH
+                MOV.W   R10,@R0                 ;WITH TCNT2
+
+                MOV     #H'20,R10               ;SET TCR1 TO CLEAR TCNT1
+                MOV     TCR1,R0                 ;(CHANEL1 COUNTER) AFTER
+                MOV.B   R10,@R0                 ;INPUT CAPTURE OF GRA1
+                                                ;LOOK AT PAGE 210!!!!!
+
+                MOV     #H'0D,R10               ;SET TIOR1 TO SET INPUT DOWN
+                MOV     TIOR1,R0                ;EDGE CAPTURE REGISTER GRA1
+                MOV.B   R10,@R0                 ;LOOK AT PAGE 212!!!!!
+
+;***** INITIALIZE PWM **************
+;INITPWM1:
+                MOV     PAIOR,R0                ;SET PORT A TO BE INPUT
+                MOV     MASKPA,R1
+                ;MOV.W   @R0,R10
+                ;OR      R1,R10
+                MOV.W   R1,@R0                 ;LOOK AT PAGE 413 !!!!!
+
+                MOV     PACR1,R0                ;SET PORT A FOR TCLKA,
+                MOV.W   IOASET,R10              ;TCLKB AND TIOCA1 INPUT
+                MOV.W   R10,@R0                 ;SIGNAL, PAGE 414 !!!!!
+
+                MOV     PBIOR,R0                ;SET PORT B TO BE OUTPUT
+                MOV     MASKPB,R1
+                MOV.W   @R0,R10
+                OR      R1,R10
+                MOV.W   R10,@R0
+
+                MOV     PBCR2,R0                ;SET PORT B FOR TIMER
+                MOV.W   IOSET,R10
+                MOV.W   R10,@R0
+
+                MOV     #0,R10                  ;SET TCR3,4 TIMER CONTROL REG.
+                MOV     TCR3,R0                 ; -TCNT CLEAR INHIBIT
+                MOV.B   R10,@R0                 ; -POSITIVE EDGE
+                MOV     TCR4,R0                 ; -INTERNAL CLK.
+                MOV.B   R10,@R0
+
+                MOV     #H'2E,R10               ;SET TFCR
+                MOV     TFCR,R0                 ; -PWM COMPLEMENTARY
+                MOV.B   R10,@R0                 ; -GRB3,GRB4,GRA3 BUFFER MODE
+
+                MOV     #0,R10                  ;SET TCNT4 = 0
+                MOV     TCNT4,R0
+                MOV.W   R10,@R0
+;IMPROVE
+MOV IINV,R10
+MOV @R10,R10
+MOV K8000,R0
+CMP/GE R0,R10
+BF  SMALL_SIZE
+MOV #100,R10 
+BRA BIG_SIZE
+NOP
+SMALL_SIZE:
+;IMPROVE
+                MOV     #80,R10                 ;SET TCNT3 = 2 (SET DELAY TIME)
+BIG_SIZE:                                       ;IMPROVE
+                MOV     TCNT3,R0                ;DELAY TIME=80*50ns=4 MICROSEC
+                MOV.W   R10,@R0
+
+                MOV     TBASE,R10               ;SET GRA3 = MAX COUNT-1
+                MOV.W   @R10,R10
+                MOV     GRA3,R0
+                MOV.W   R10,@R0
+
+                MOV     #H'FC,R10               ;SET POSITIVE/NEG OUTPUT
+                MOV     TOCR,R0
+                MOV.B   R10,@R0
+
+                MOV     #0,R10                  ;SET INTERRUPT MASK BIT = 0
+                LDC     R10,SR
+
+                MOV     MASKITU3,R10            ;SET PRIORITY OF ITU3 = 10
+                MOV     IPRD,R0
+                MOV.W   R10,@R0
+
+                MOV     #H'F9,R10               ;SET ENABLE TIME INTERRUPT
+                MOV     TIER3,R0                ; IMFA3 = INTERRUPT
+                MOV.B   R10,@R0
+
+;OVERMOD1----------------BEGIN--------------------------------
+		MOV     #H'FC,R10               ;SET ENABLE TIME INTERRUPT
+		MOV     TIER4,R0                ;OVF4 = INTERRUPT
+		MOV.B   R10,@R0
+;OVERMOD1-----------------END---------------------------------
+;       MOV PA,R1
+;       MOV.B @R1,R0
+;       OR  #B'10000000,R0           ;ON OPTO
+;       MOV.B R0,@R1
+
+;       MOV CS1,R2
+;       MOV R2,@R2                   ;CS1 ACTIVE
+
+
+                MOV     #0,R10                  ;SET INTERRUPT MASK BIT = 0
+                LDC     R10,SR
+
+		MOV.W	MASKIRQ2,R10
+		MOV	IPRA,R0
+		MOV.W	R10,@R0
+
+		MOV.W	IRQ2MASK,R10
+		MOV	ICR,R1
+		MOV.W   @R1,R0
+		OR	R10,R0
+		MOV.W	R0,@R1
+
+                MOV     TBASE,R10               ;SET GRA3 = MAX COUNT-1
+                MOV.W   @R10,R10
+;OVERMOD1-----------------BEGIN----------------------------------
+		SHAR	R10
+                MOV     BRB3B1,R0
+                MOV.W   R10,@R0
+
+                MOV     BRA4B1,R0
+                MOV.W   R10,@R0
+
+                MOV     BRB4B1,R0
+                MOV.W   R10,@R0
+
+;                MOV     GRB3,R0
+;                MOV.W   R10,@R0
+
+;                MOV     GRA4,R0
+;                MOV.W   R10,@R0
+
+;                MOV     GRB4,R0
+;                MOV.W   R10,@R0
+;OVERMOD1------------------END------------------------------------------
+
+                MOV     #H'7E,R10               ;SET TSTR TO START TIMER
+                MOV     TSTR,R0                 ;-TCNT4,TCNT3,TCNT2,TCNT1
+                MOV.B   R10,@R0                 ;LOOK AT PAGE 197!!!!!!
+
+                RTS
+                NOP
+
+;*****************************************************************************
+;
+; Specify  :  INITIALIZE TIMER0 TO INT. 500US   ;PAGE 238!!!!!
+;
+; Argument :  NONE
+;
+; Return   :  NONE
+;
+; Use Reg. :  NONE
+;*****************************************************************************
+;            .ALIGN 4
+;INT_500US:
+;	    BRA    INIT_FOUT
+;	    NOP
+
+;            STS.L  PR,@-SP
+
+;            MOV    #B'00100000,R10         ;GRA COMPARE MATCH
+;            MOV    TCR0,R0                 ;PAGE 228!!!!!
+;            MOV.B  R10,@R0
+
+;            ;MOV    #H'40,R10
+;            ;MOV    TMDR,R0                ;PAGE 219!!!!!
+;            ;MOV.B  R10,@R0
+
+;            ;MOV    #H'EE,R10
+;            ;MOV    TFCR,R0                ;PAGE 222!!!!!
+;            ;MOV.B  R10,@R0
+
+;            ;MOV    #H'FC,R10
+;            ;MOV    TOCR,R0                ;PAGE 223!!!!!
+;            ;MOV.B  R10,@R0
+
+;            MOV    #B'0,R10
+;            MOV    TIOR0,R0                ;PAGE 229!!!!!
+;            MOV.B  R10,@R0
+
+;            MOV    TBASE0,R10              ;SET 500 US TIMER
+;            MOV    GRA0,R0
+;            MOV.W  R10,@R0
+
+;            MOV    #0,R10                  ;SET INTERRUPT MASK BIT = 0
+;            LDC    R10,SR
+
+;            MOV    PRIOITU0,R10            ;SET PRIORITY OF ITU0 = 12
+;            MOV    IPRC_,R0
+;            MOV.W  R10,@R0
+
+;            MOV    #H'F9,R10               ;SET ENABLE TIME INTERRUPT
+;            MOV    TIER0,R0                ; IMFA0 = INTERRUPT
+;            ;MOV.B  R10,@R0
+
+;            MOV    TSTR_,R10                 ;PAGE 216!!!!!
+;            MOV.B  @R10,R0
+;            OR     #1,R0
+;            MOV.B  R0,@R10
+
+
+;            LDS.L  @SP+,PR
+;            RTS
+;            NOP
+
+;*****************************************************************************
+;
+; Specify  :  INITIALIZE TIOCA2
+;
+; Argument :  NONE
+;
+; Return   :  NONE
+;
+; Use Reg. :  NONE
+;*****************************************************************************
+            .ALIGN 4
+INIT_FOUT:
+            STS.L  PR,@-SP
+	MOV	TCR0,R0
+	MOV	#B'0100000,R10
+	MOV.B	R10,@R0
+
+	MOV	GRA0,R0
+	MOV	TBASEA,R10
+	MOV.W	R10,@R0
+
+	MOV	GRB0,R0
+	MOV	TBASEB,R10
+	MOV.W	R10,@R0
+	
+	MOV	TMDR,R10
+	MOV.B	@R10,R0
+	OR	#B'1,R0
+	MOV.B	R0,@R10
+
+            MOV    TSTR_,R10               ;PAGE 216!!!!!
+            MOV.B  @R10,R0
+            OR     #B'1,R0
+            MOV.B  R0,@R10
+  
+            LDS.L  @SP+,PR
+            RTS
+            NOP
+	
+
+                .ALIGN 4
+
+IPRC_:           .DATA.L H'5FFFF88
+TSTR_:           .DATA.L H'5FFFF00
+
+                ;PAGE 214
+TCR0:           .DATA.L H'5FFFF04
+TIOR0:          .DATA.L H'5FFFF05
+TIER0:          .DATA.L H'5FFFF06
+TSR0:           .DATA.L H'5FFFF07
+TCNT0:          .DATA.L H'5FFFF08
+GRA0:           .DATA.L H'5FFFF0A
+GRB0:           .DATA.L H'5FFFF0C
+;TMDR:           .DATA.L H'5FFFF02
+;TFCR:           .DATA.L H'5FFFF03
+;TOCR:           .DATA.L H'5FFFF31
+
+
+PRIOITU0:       .DATA.L H'90
+TBASE0:         .DATA.L 1999        ;1mS(20E6*500E-6-1)
+TBASEA:		.DATA.L 20000
+TBASEB:		.DATA.L 0
+K8000:          .DATA.L 8000
+IINV:           .DATA.L I_INV
+;****************************** constant area ********************************
+MAXANG: .DATA.L PULSE;4096
+PAIOR:  .DATA.L H'5FFFFC4
+PACR1:  .DATA.L H'5FFFFC8
+PBIOR:  .DATA.L H'5FFFFC6
+PBCR2:  .DATA.L H'5FFFFCE
+TSTR:   .DATA.L H'5FFFF00
+TFCR:   .DATA.L H'5FFFF03
+TCR1:   .DATA.L H'5FFFF0E
+TIOR1:  .DATA.L H'5FFFF0F
+TOCR:   .DATA.L H'5FFFF31
+TCR2:   .DATA.L H'5FFFF18
+TIER2:  .DATA.L H'5FFFF1A
+TIOR2:  .DATA.L H'5FFFF19
+TCNT2:  .DATA.L H'5FFFF1C
+TSR2:   .DATA.L H'5FFFF1B
+GRA2:   .DATA.L H'5FFFF1E
+GRB2:   .DATA.L H'5FFFF20
+TCR3:   .DATA.L H'5FFFF22
+TIER3:  .DATA.L H'5FFFF24
+TCNT3:  .DATA.L H'5FFFF26
+GRA3:   .DATA.L H'5FFFF28
+GRB3:   .DATA.L H'5FFFF2A
+BRA3:   .DATA.L H'5FFFF2C
+BRB3:   .DATA.L H'5FFFF2E
+TCR4:   .DATA.L H'5FFFF32
+TIER4:  .DATA.L H'5FFFF34
+TCNT4:  .DATA.L H'5FFFF36
+GRA4:   .DATA.L H'5FFFF38
+GRB4:   .DATA.L H'5FFFF3A
+BRA4:   .DATA.L H'5FFFF3C
+BRB4:   .DATA.L H'5FFFF3E
+IPRD:   .DATA.L H'5FFFF8A
+TMDR:   .DATA.L H'5FFFF02
+IPRA:	.DATA.L H'5FFFF84
+ICR:	.DATA.L H'5FFFF8E
+PA:	.DATA.L H'5FFFFC0
+PCDRL:	.DATA.L H'5FFFFD1
+CS1:	.DATA.L H'1000000
+
+MASKITU3: .DATA.L H'000BAA0   ;SET PRIORITY OF ITU3 TO 10,ITU2 T0 11,ITU4 TO 10 OVERMOD1
+MASK:     .DATA.L H'0000FFFF
+MASKPA:   .DATA.L H'FFFF8841;H'FFFF8BFF
+MASKPB:   .DATA.L H'000001FF;0FF  ;SET PORT B TO OUTPUT
+SET2:     .DATA.L 160         ;INITIAL TIME DURATION (MUST > TIME DELAY)
+TBASE:    .DATA.L _TBASE
+BRB3B1:   .DATA.L BRB3B
+BRA4B1:   .DATA.L BRA4B
+BRB4B1:   .DATA.L BRB4B
+IOSET:    .DATA.W H'AAA0;H'AAAA      ;SET PORT B FOR TIMER
+IOASET:   .DATA.W H'1A02;H'1A22      ;SET PORT A FOR TIMER
+MASKIRQ2: .DATA.W H'00F0  ;SET PRIORITY OF IRQ2 TO 15
+IRQ2MASK: .DATA.W H'0020  ;SET IRQ2 ACTIVE ON FALLING EDGE
+
+	.ALIGN 4
+MOTOR_PARA:
+	STS.L  PR,@-SP
+
+	MOV	RS,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#105,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	RSTATOR,R2
+	MOV.W	R10,@R2
+
+	MOV	LS,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#106,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	LSTATOR,R2
+	MOV.W	R10,@R2
+
+	MOV	pLS,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#107,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	SIGMA,R2
+	MOV.W	R10,@R2
+
+	MOV	RR,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#108,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	RROTOR,R2
+	MOV.W	R10,@R2
+
+	MOV	LR,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#109,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	LROTOR,R2
+	MOV.W	R10,@R2
+
+	MOV	ISD,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#111,R11
+	JSR	@R14;EE_RD
+	NOP
+;CORRECT1--------------------BEGIN---------------------------
+	MOV	F5000,R2
+	MULS	R10,R2
+	STS	MACL,R10
+	MOV	FMAX,R2
+	MOV.W	@R2,R2
+	DIVS	R2,R10
+;CORRECT1---------------------END----------------------------
+        MOV     ISD_R,R2
+	MOV	R10,@R2
+
+	MOV	ISQ,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#110,R11
+	JSR	@R14;EE_RD
+	NOP
+;CORRECT1--------------------BEGIN---------------------------
+;	MOV	F5000,R2
+;	MULS	R10,R2
+;	STS	MACL,R10
+;	MOV	FMAX,R2
+;	MOV.W	@R2,R2
+;	DIVS	R2,R10
+;CORRECT1---------------------END----------------------------
+        MOV     ISQ_R,R2
+	MOV	R10,@R2
+
+	MOV	TS,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#114,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	T_STATOR,R1
+	MOV.W	R10,@R1
+
+	MOV	TR,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#113,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	T_ROTOR,R1
+	MOV.W	R10,@R1
+
+	MOV	RL,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#112,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	R_OV_L,R1
+	MOV.W	R10,@R1
+
+	MOV	IDQSC9,R10
+	MOV	EERD,R14
+	MOV	#0,R10
+	MOV	#115,R11
+	JSR	@R14;EE_RD
+	NOP
+	MOV	IDQS9,R1
+	MOV.W	R10,@R1
+
+        MOV     #0,R10
+	MOV	#71,R11
+	MOV	EERD,R14
+	JSR	@R14;EE_RD
+	NOP
+	MOV	SERIES,R1
+        MOV.B   R10,@R1
+
+	LDS.L  @SP+,PR
+	RTS
+	NOP
+
+	.ALIGN 4
+RSTATOR:.DATA.L	_R_STATOR
+LSTATOR:.DATA.L	_L_STATOR
+RROTOR:	.DATA.L	_R_ROTOR
+LROTOR:	.DATA.L	_L_ROTOR
+SIGMA:	.DATA.L	_SIGMA_L
+ISD_R:	.DATA.L	_ISD_RATED
+ISQ_R:	.DATA.L	_ISQ_RATED
+T_STATOR:.DATA.L STATOR_T
+T_ROTOR:.DATA.L	ROTOR_T
+R_OV_L:	.DATA.L	R_L
+RS:	.DATA.L	800
+LS:	.DATA.L	92
+RR:	.DATA.L 400
+LR:	.DATA.L	78
+pLS:	.DATA.L 14
+ISD:	.DATA.L	480	;(7.5*64)
+ISQ:	.DATA.L	1440	;(1.5*15*64)
+TS:	.DATA.L	57
+TR:	.DATA.L	5
+RL:	.DATA.L	320
+F5000:  .DATA.L 5000
+FMAX:   .DATA.L _F_MAX
+IDQSC9: .DATA.L 1000
+IDQS9:	.DATA.L IDQSCL9
+EERD:	.DATA.L EE_RD
+SERIES: .DATA.L _SERIES
+        .END
+
+

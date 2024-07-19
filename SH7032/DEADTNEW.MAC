@@ -1,0 +1,217 @@
+	.IMPORT SINCOS
+	.IMPORT	_ATANTAB,IUV2XY
+	.EXPORT DTIME_NEW
+        .INCLUDE "MACRO.H"			        ;(MUL,DIV)
+	.INCLUDE "RAM_IMP.H"
+	.SECTION DEADTNEW,CODE,ALIGN=4
+
+;*************************************************************************
+;			DEAD TIME COMPENSATE 
+;
+;RESERVE REGISTER:
+;               R5 : UDC
+;RETURN REGISTER:
+;		R3 : UCX
+;		R4 : UCY
+;**************************************************************************			
+DTIME_NEW:
+		MOV	R0,@-SP
+		MOV	R1,@-SP
+		MOV	R2,@-SP
+		MOV	R7,@-SP
+		MOV	R11,@-SP
+		MOV	R12,@-SP
+		MOV	R13,@-SP
+		MOV	R14,@-SP
+                STS.L   PR,@-SP
+
+        MOV	IU,R2
+	MOV	@R2,R2			;R1=IW (HARDWARE)
+NEG R2,R2
+	MOV	IV,R1			;R2=IV (HARDWARE)
+	MOV	@R1,R1
+NEG R1,R1
+	ADD	R2,R1			;SINCE WE SENSE IV,IW
+	NEG	R1,R1			;BUT SOFTWARE SUPPORT FOR IU,IV
+
+	MOV	IUV_XY,R14
+	JSR	@R14;IUV2XY
+	NOP
+	MOV	R1,R4
+	NEG	R2,R3
+;	MOV	TEMP,R1
+;	MOV	R3,@R1
+	MOV	TEMP3,R1
+	MOV	R4,@R1
+	MOV	SQRT3,R7
+;---------------------------------------------------------
+;  FIND SEGMENT OF CURRENT COMMAND
+;	R1 := SEGMENT NUMBER
+;---------------------------------------------------------
+SEGF:	MOV	R3,R1			;R1 := VX'
+	CMP/PZ	R3			;IF VX >= 0 THEN  LABEL1
+	BT	LABEL1
+	NEG	R3,R1			;ELSE VX':=R1:= -VX
+LABEL1:	
+	MULS	R1,R7			;VX'.SQRT(3)*2000
+	MOV	SCALE1_,R11
+	STS	MACL,R12		;    R12:=VX'.SQRT(3)*2000
+	DIVS	R11,R12			;    R12:=VX'.SQRT(3)
+	CMP/PZ  R4			;IF VY >= 0 THEN  SEG123(SEG1,2,3)
+	BT	SEG123
+	NEG	R4,R13
+	MOV	R13,R4			;ELSE VY ;= -VY (SEG4,5,6)
+	;******* SEGMENT IS IN (4),(5),(6) ***********
+SEG456:	CMP/PZ	R3			;IF VX >= 0 THEN SEG56
+	BT	SEG56
+SEG45:	CMP/GT	R12,R4			;IF VY > VX'SQRT(3) THEN SEG4
+	BF	SEG4			;ELSE SEG5
+	BT	SEG5
+SEG56:	CMP/GT	R12,R4			;IF VY > VX'SQRT(3) THEN SEG5
+	BT	SEG5			;ELSE SEG6
+	BF	SEG6
+
+SEG4:	BRA	ENDS
+	MOV	#4,R0			;SEGMENT := 4
+
+SEG5:	BRA	ENDS
+	MOV	#5,R0			;SEGMENT := 5
+
+SEG6:	BRA	ENDS
+	MOV	#6,R0			;SEGMENT := 6
+
+	;******* SEGMENT IS IN (1),(2),(3) ***********
+SEG123:	CMP/PZ	R3			;IF VX >= 0 THEN SEG12
+	BT	SEG12
+SEG23:	CMP/GT	R12,R4			;IF VY > VX'SQRT(3) THEN SEG2
+	BT	SEG2			;ELSE SEG3
+	BF	SEG3
+SEG12:	CMP/GT  R12,R4			;IF VY > VX'SQRT(3) THEN SEG2
+	BT	SEG2			;ELSE SEG1
+	BF	SEG1
+
+SEG1:	BRA	ENDS
+	MOV	#1,R0			;SEGMENT := 1
+
+SEG2:	BRA	ENDS
+	MOV	#2,R0			;SEGMENT := 2
+
+SEG3:	BRA	ENDS
+	MOV	#3,R0			;SEGMENT := 3
+ENDS:
+	MOV	TEMP,R1
+	MOV	R0,@R1
+	BRA	S1
+	NOP
+;******************** CONSTANT AREA ******************************
+	.ALIGN 4
+	
+IU:	.DATA.L _IU
+IV:	.DATA.L _IV
+IUV_XY:	.DATA.L IUV2XY
+SQRT3_: .DATA.L	3464			;SRQT(3)*2000
+SCALE1_:.DATA.L 2000			;SCALE OF SQRT(3)
+ISQRT3:	.DATA.L 1155			;1/SQRT(3) * 2000
+SCALE2_: .DATA.L 2000                    ;SCALE OF 1/SQRT(3)
+VB_MIN: .DATA.L 800
+VBASE:  .DATA.L _VBASE
+T_BASE: .DATA.L _TBASE                    ;MUST CHANGE IN INIT.SRC TOO.
+TEMP:	.DATA.L _TEMP
+TEMP3:  .DATA.L _TEMP3
+	.ALIGN 4
+;**********************************************************************
+S1:	CMP/EQ	#1,R0
+	BF	S2
+	MOV	UDCOM1,R3
+        MOV.W   @R3,R3
+	MOV	UDCOM3,R4
+        MOV.W   @R4,R4
+        NEG     R4,R4
+	BRA	OUT_UCOM
+	NOP
+
+S2:	CMP/EQ	#2,R0
+	BF	S3
+	MOV	UDCOM5,R3
+        MOV.W   @R3,R3
+	MOV	UDCOM0,R4
+	BRA	OUT_UCOM
+	NOP
+
+S3:	CMP/EQ	#3,R0
+	BF	S4
+	MOV	UDCOM1,R3
+	MOV.W   @R3,R3
+	MOV	UDCOM3,R4
+	MOV.W	@R4,R4
+	BRA	OUT_UCOM
+	NOP
+
+S4:	CMP/EQ	#4,R0
+	BF	S5
+	MOV	UDCOM1,R3
+	MOV.W   @R3,R3
+	NEG	R3,R3
+	MOV	UDCOM3,R4
+	MOV.W	@R4,R4
+	BRA	OUT_UCOM
+	NOP
+
+S5:	CMP/EQ	#5,R0
+	BF	S6
+	MOV	UDCOM5,R3
+	MOV.W	@R3,R3
+	NEG	R3,R3
+	MOV	UDCOM0,R4
+	BRA	OUT_UCOM
+	NOP
+
+S6:
+	MOV	UDCOM1,R3
+	MOV.W	@R3,R3
+	NEG	R3,R3
+	MOV	UDCOM3,R4
+	MOV.W	@R4,R4
+	NEG	R4,R4
+	BRA	OUT_UCOM
+	NOP
+       
+OUT_UCOM:
+	MOV	UDC1,R0			;UDC1 = SQRT(2)*220*2^3
+	MULS	R5,R3			;R5 = MEASURE UDC
+	STS	MACL,R3			
+	DIVS	R0,R3			;R3 = UCX
+
+	MOV	UDC1,R0
+	MULS	R5,R4
+	STS	MACL,R4
+	DIVS	R0,R4			;R4 = UCY
+
+	LDS.L	@SP+,PR
+	MOV	@SP+,R14
+	MOV	@SP+,R13
+	MOV	@SP+,R12
+	MOV	@SP+,R11
+	MOV	@SP+,R7
+	MOV	@SP+,R2
+	MOV	@SP+,R1
+	RTS
+	MOV	@SP+,R0
+;***********************************************************************
+		.ALIGN 4
+UDC1:	   .DATA.L 2489
+SQRT3:     .DATA.L 3464			;SRQT(3)*2000
+UDCOM0:	   .DATA.L 0
+UDCOM1:	   .DATA.L UD_COM1;20    	     	;SQRT(2)*220*2^3*
+					;4*10^-6*fsw*0.816=8.12*2
+;UDCOM2:	   .DATA.L -20
+
+UDCOM3:	   .DATA.L UD_COM3;35     	     	;SQRT(2)*220*2^3*
+					;2*10^-6*2*10^3*1.414=14.07 
+;UDCOM4:	   .DATA.L -35
+
+UDCOM5:	   .DATA.L UD_COM5;40     	     	;SQRT(2)*220*2^3*
+					;2*10^-6*2*10^3*1.632=16.25*2 
+;UDCOM6:	   .DATA.L -40		
+
+        .END

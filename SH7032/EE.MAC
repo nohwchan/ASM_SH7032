@@ -1,0 +1,512 @@
+         .EXPORT  EE_WR,EE_EN,EE_RD,CHK_SUM
+         .INCLUDE "MACRO.H"
+         .INCLUDE "RAM_IMP.H"
+         .SECTION EEPROM,CODE,ALIGN=4
+
+;****************************************************************************
+;   Specify  : EEPROM ENABLE TO ERESE/WRITE
+;   Argument : none
+;   Return   : none
+;   Use Reg. : R0,R12
+;****************************************************************************
+EE_EN:
+          STS.L   PR,@-SP
+
+          BSR     SET_CS
+          NOP
+
+          BSR     SET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     SET_DI
+          NOP
+          BSR     SET_DI
+          NOP
+
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI		;93C56
+          NOP
+          BSR     RSET_DI		
+          NOP
+
+          BSR     RSET_CS
+          NOP
+
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+
+;****************************************************************************
+;   Specify  : EEPROM DISABLE TO ERESE/WRITE
+;   Argument : none
+;   Return   : none
+;   Use Reg. : R0,R12
+;****************************************************************************
+EE_D:
+          STS.L   PR,@-SP
+
+          BSR     SET_CS
+          NOP
+
+          BSR     SET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     RSET_DI		;93C56
+          NOP
+          BSR     RSET_DI		;93C56
+          NOP
+
+          BSR     RSET_CS
+          NOP
+
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+
+;****************************************************************************
+;   Specify  : Set DI to 1
+;   Argument : none
+;   Return   : none
+;   Use Reg. : R0,R12
+;****************************************************************************
+SET_DI:
+          STS.L   PR,@-SP
+
+          MOV     PBDR_H,R12
+          MOV.B   @R12,R0
+          AND     #B'11011111,R0
+          MOV.B   R0,@R12
+
+          MOV.B   @R12,R0
+          OR      #B'00001000,R0          ;SET DI
+          MOV.B   R0,@R12
+
+          NOP
+          NOP
+          NOP
+          NOP
+
+          MOV.B   @R12,R0
+          OR      #B'00100000,R0
+          MOV.B   R0,@R12
+
+          NOP
+          NOP
+          NOP
+          NOP
+
+          MOV.B   @R12,R0
+          AND     #B'11011111,R0
+          MOV.B   R0,@R12
+
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+
+;****************************************************************************
+;   Specify  : Reset DI to 0
+;   Argument : none
+;   Return   : none
+;   Use Reg. : R0,R12
+;****************************************************************************
+RSET_DI:
+          STS.L   PR,@-SP
+
+          MOV     PBDR_H,R12
+          MOV.B   @R12,R0
+          AND     #B'11011111,R0
+          MOV.B   R0,@R12
+
+
+          MOV.B   @R12,R0
+          AND     #B'11110111,R0          ;SET DI
+          MOV.B   R0,@R12
+
+          NOP
+          NOP
+          NOP
+          NOP
+
+          MOV.B   @R12,R0
+          OR      #B'00100000,R0
+          MOV.B   R0,@R12
+
+          NOP
+          NOP
+          NOP
+          NOP
+
+          MOV.B   @R12,R0
+          AND     #B'11011111,R0
+          MOV.B   R0,@R12
+
+          NOP
+          NOP
+
+          MOV.B   @R12,R5
+
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+
+;****************************************************************************
+;   Specify  : Set CS to 1
+;   Argument : none
+;   Return   : none
+;   Use Reg. : R0,R11,R12
+;****************************************************************************
+SET_CS:
+          STS.L   PR,@-SP
+          MOV     PADR_H,R11
+          MOV.B   @R11,R0
+;         OR      #B'00000010,R0        ;SET CS EXT ROM
+	  OR	  #B'00001000,R0	;INT ROM
+          MOV.B   R0,@R11
+
+          MOV     PBDR_H,R12
+          MOV.B   @R12,R0
+          OR      #B'00100000,R0
+          MOV.B   R0,@R12
+
+          MOV     #2,R0
+SCS:      ADD     #-1,R0
+          CMP/EQ  #0,R0
+          BT      SCS1
+          BRA     SCS
+          NOP
+SCS1:
+          MOV.B   @R12,R0
+          AND     #B'11011111,R0
+          MOV.B   R0,@R12
+
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+
+;****************************************************************************
+;   Specify  : Reset CS to 0
+;   Argument : none
+;   Return   : none
+;   Use Reg. : R0,R11
+;****************************************************************************
+RSET_CS:
+          STS.L   PR,@-SP
+          MOV     PADR_H,R11
+          MOV.B   @R11,R0
+;         AND     #B'11111101,R0          ;SET CS EXT ROM
+	  AND	  #B'11110111,R0	  ;INT ROM
+          MOV.B   R0,@R11
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+
+;****************************************************************************
+;   Specify  : WRITE 16 BIT TO EEPROM
+;   Argument : R10=DATA TO WRITE
+;            : R11=ADDR. TO WRITE
+;   Return   : none
+;   Use Reg. : R0,R5,R11,R12,R13,R14
+;****************************************************************************
+EE_WR:
+          STS.L   PR,@-SP
+          MOV     R11,R13
+          MOV     R11,R9
+          MOV     R11,R14
+          BSR     EE_EN
+          NOP
+;*****************************
+;         ERASE BEFORE WRITE
+;          BSR     SET_CS
+;          NOP
+;          BSR     SET_DI
+;          NOP
+;          BSR     SET_DI
+;          NOP
+;          BSR     SET_DI
+;          NOP
+
+;          MOV     #9,R1			;93C56
+;          SHLL16  R14
+;          SHLL8   R14
+;;          SHLL2   R14			;93C56
+;ERASE1:   ADD     #-1,R1
+;          MOV     #0,R2
+;          CMP/EQ  R1,R2
+;          BT      ERASE3
+;          ROTL    R14
+;          BT      ERASE2
+;          BSR     RSET_DI
+;          NOP
+;          BRA     ERASE1
+;          NOP
+;ERASE2:   BSR     SET_DI
+;          NOP
+;          BRA     ERASE1
+;          NOP
+;ERASE3:   BSR     RSET_DI
+;          NOP
+;          BSR     RSET_CS
+;          NOP
+;  
+;          NOP
+;          NOP
+;          NOP
+;          NOP
+;
+;          BSR     SET_CS
+;          NOP
+;
+;          MOV     PBDR_H,R11
+;CHK_DO:   MOV.B   @R11,R0
+;
+;          TST     #B'00000100,R0
+;          BT      CHK_DO
+;
+;          BSR     RSET_CS
+;          NOP
+;ERASE5:
+;*****************************
+          BSR     SET_CS
+          NOP
+
+          BSR     SET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+          BSR     SET_DI
+          NOP
+          MOV     #9,R1			;93C56
+          SHLL16  R13
+          SHLL8   R13
+;          SHLL2   R13			;93C56
+EEWR:     ADD     #-1,R1
+          MOV     #0,R2
+          CMP/EQ  R1,R2
+          BT      EEWR1
+          ROTL    R13
+          BT      WRSET
+          BSR     RSET_DI
+          NOP
+          BRA     EEWR
+          NOP
+WRSET:    BSR     SET_DI
+          NOP
+          BRA     EEWR
+          NOP
+EEWR1:
+          MOV     #17,R1
+          SWAP.W  R10,R10
+EEWR2:    ADD     #-1,R1
+          MOV     #0,R2
+          CMP/EQ  R1,R2
+          BT      EEWR3
+          ROTL    R10
+          BT      WRSET1
+          BSR     RSET_DI
+          NOP
+          BRA     EEWR2
+          NOP
+WRSET1:   BSR     SET_DI
+          NOP
+          BRA     EEWR2
+          NOP
+EEWR3:
+          BSR     RSET_CS
+          NOP
+
+          ;NOP
+          ;NOP
+          NOP
+          NOP
+
+          BSR     SET_CS
+          NOP
+
+        MOV TIME,R1
+
+          MOV     PBDR_H,R11
+CHK_DO1:  MOV.B   @R11,R0
+
+        ADD #-1,R1
+	MOV #0,R2
+	CMP/EQ R2,R1
+	BF CHK_DO2
+
+	MOV PBDR_H,R1
+	MOV.B @R1,R0
+	OR #B'10000000,R0	;INT ROM
+        MOV.B R0,@R1
+
+        MOV TIP_TYP0,R0
+        MOV #7,R1
+        MOV.B R1,@R0
+        MOV SYSFLG2,R1
+	MOV.B @R1,R0
+	OR  #B'1000,R0
+	AND #B'11111000,R0
+        MOV.B R0,@R1
+	BRA EE_ERR
+	NOP	
+CHK_DO2:
+          TST     #B'00000100,R0
+          BT      CHK_DO1
+
+          BSR     RSET_CS
+          NOP
+
+          BSR     EE_D
+          NOP
+
+        MOV R9,R0
+        CMP/EQ #127,R0
+	BT  EE_ERR
+	BSR CHK_SUM
+	NOP
+	MOV R8,R10
+        MOV #127,R11
+	BSR EE_WR
+	NOP
+
+EE_ERR:
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+
+;****************************************************************************
+;   Specify  : READ 16 BIT FROM EEPROM
+;   Argument : R11=ADDRESS TO READ
+;   Return   : R10=DATA RECEIVE
+;   Use Reg. : R0,R1,R2,R11,R12,R13
+;****************************************************************************
+EE_RD:
+          STS.L   PR,@-SP
+          MOV     R11,R13
+          BSR     SET_CS
+          NOP
+
+          BSR     SET_DI
+          NOP
+          BSR     SET_DI
+          NOP
+          BSR     RSET_DI
+          NOP
+
+          MOV     #9,R1			;93C56
+          SHLL16  R13
+          SHLL8   R13
+;          SHLL2   R13			;93C56
+EERD:     ADD     #-1,R1
+          MOV     #0,R2
+          CMP/EQ  R1,R2
+          BT      EERD1
+          ROTL    R13
+          BT      RDSET
+          BSR     RSET_DI
+          NOP
+          BRA     EERD
+          NOP
+RDSET:    BSR     SET_DI
+          NOP
+          BRA     EERD
+          NOP
+EERD1:
+          MOV     #17,R1
+          ;MOV     PBDR_H,R13
+          MOV     #0,R14
+EERD2:    ADD     #-1,R1
+          MOV     #0,R2
+          CMP/EQ  R1,R2
+          BT      EERD3
+          BSR     RSET_DI
+          NOP
+          ;MOV.B   @R13,R0
+          MOV     R5,R0
+          AND     #B'00000100,R0
+          ROTR    R0
+          ROTR    R0
+          ROTR    R0
+          ROTCL   R14
+          BRA     EERD2
+          NOP
+EERD3:
+          MOV     R14,R10
+
+          BSR     RSET_CS
+          NOP
+          LDS.L   @SP+,PR
+          RTS
+          NOP
+;*************************************************
+;SUBROUTINE FOR CALCULATE CHECKSUM 
+;RETURN : R8 = SUM OF EEPROM(ONLY LOW BYTE) #0-#126
+;*************************************************
+CHK_SUM:
+        STS.L   PR,@-SP
+	MOV	R9,@-SP
+	MOV	R10,@-SP
+	MOV	R11,@-SP
+	MOV	#0,R8
+	MOV	#-1,R9
+LOOP_CHK:
+	ADD	#1,R9
+        MOV     #126,R10
+	CMP/GT	R10,R9
+	BT	OUT_CHK
+	MOV	#0,R10
+	MOV	R9,R11
+	BSR	EE_RD
+	NOP
+	ADD	R10,R8
+	BRA	LOOP_CHK
+	NOP					 
+OUT_CHK:
+	MOV	MASKHI,R9
+	AND	R9,R8
+	MOV	@SP+,R11
+	MOV	@SP+,R10
+	MOV	@SP+,R9
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+
+          .ALIGN 4
+PADR_H:   .DATA.L H'05FFFFC0
+PBDR_H:   .DATA.L H'05FFFFC2
+
+MASK:     .DATA.L H'FFFF
+MASK1:    .DATA.L B'111111
+TEST:     .DATA.L H'AAAAAAAA
+MS10:     .DATA.L 500
+TIME:	  .DATA.L H'3000
+TIP_TYP0: .DATA.L TIP_TYP
+CS1:	  .DATA.L H'1000000
+SYSFLG2:  .DATA.L SYSFLG
+MASKHI:   .DATA.L H'000000FF
+
+              .END

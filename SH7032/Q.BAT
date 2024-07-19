@@ -1,0 +1,2 @@
+ECHO OFF
+C:\Q %1

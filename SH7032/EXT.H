@@ -1,0 +1,988 @@
+;FLYINGA
+MOV PBD_HI1,R1
+MOV.B @R1,R0
+TST #B'1000000,R0               ;IF MAG ON
+BT  CHECK_CONTINUE              ;THEN NORMAL CHECK FWD RWD
+BRA OUT_EXT                     ;ELSE NOT CHECK
+NOP
+CHECK_CONTINUE:
+;FLYINGA
+
+        MOV INP1,R1
+        MOV.W @R1,R0
+        AND #B'00110000,R0        ;MASK TO CHECK FWD OR RWD
+        TST #B'00100000,R0
+        BT CHK_RWD                ;NO FWD OR RWD
+        TST #B'00010000,R0
+        BF NO_FW_RW
+	BRA CHK_FWD
+	NOP
+
+CHK_RWD:
+	TST #B'00010000,R0
+        BT NO_FW_RW               ;FWD AND RWD SIMULTANOUS JMP
+
+RUN_RWD:
+	MOV RSTATUS1_,R1
+	MOV.B @R1,R0
+	AND #B'11110111,R0
+	MOV.B R0,@R1
+
+	MOV PSTATUS2_,R1
+	MOV.B @R1,R0
+	TST #B'100,R0            ;IF P_STATUS.2=0 IS KEY START STOP
+	BT K_RWD                 ;JMP
+	BRA EXT_RWD
+	NOP
+
+NO_FW_RW:
+	MOV RSTATUS1_,R1
+	MOV.B @R1,R0
+	OR  #B'00001000,R0
+	MOV.B R0,@R1
+        MOV SFLG_,R1
+        MOV.B @R1,R0
+        TST #B'100,R0
+        BF N_RUN1                 ;RUN MODE AND NO FWD-RWD JMP
+        MOV PSTATUS2_,R1
+	MOV.B @R1,R0
+        TST #B'10000,R0           ;FIRST RUN JMP
+        BF NO_RUN
+        BRA OUT_EXT
+        NOP
+NO_RUN: 
+	MOV FSET2_,R1
+        MOV #0,R0
+        MOV.W R0,@R1
+        BRA FIRST_RUN
+        NOP
+N_RUN1: MOV FSET2_,R1
+        MOV #0,R0
+        MOV.W R0,@R1		;CLEAR FSET TO 0
+        MOV PSTATUS2_,R1
+        MOV.B @R1,R0
+        TST #B'10000000,R0      ;TEST ZERO SET FLAG  
+        BT N_RUN11		;NOT ZERO SET JMP
+        MOV FLAST_11,R1		;ELSE IT ZERO START THEN CLR FLAST
+        MOV #0,R2
+        MOV.W R2,@R1
+        ;CLR MSPD
+        ;BRA N_RUN11
+        ;NOP
+N_RUN11:TST #B'100,R0           ;ST/STP BY KEY ?
+        BT N_RUN2               ;YES,JMP
+	OR #B'100000,R0		;NO,IT EXT. ST/STP
+	MOV.B R0,@R1		;THEREFORE DCT STP. SET DCT STP. FLG.
+				;AND CLR. TO USED F NORM.
+        BRA OUT_EXT
+        NOP
+
+N_RUN2: 
+        MOV SFLG_,R1
+        MOV.B @R1,R0
+        TST #B'100,R0
+        BT N_RUN3                 ;NO RUN MODE JMP
+
+        MOV PSTATUS2_,R1
+        MOV.B @R1,R0
+        TST #B'10000,R0
+        BT N_RUN3                 ;NO RUN MODE JMP
+	BRA FIRST_RUN
+	NOP
+	
+	;MOV FRUN_2,R0
+	;MOV.W @R0,R0
+	;MOV #50,R1
+	;CMP/GE R1,R0
+	;BT N_RUN3
+	
+
+N_RUN3: BRA OUT_EXT	
+	NOP
+
+
+K_RWD:  MOV SFLG_,R1
+        MOV.B @R1,R0
+        TST #B'100,R0
+        BF KRWD_RUN               ;RUN BEFORE
+        BRA KRWD_NRUN
+        NOP
+
+KRWD_RUN:
+        TST #B'10000,R0
+        BF KRWD_BF                ;RUN RWD BEFORE THEN JMP
+        BRA K_FWD_BF              
+	NOP
+
+KRWD_BF:
+	MOV PSTATUS2_,R1
+	MOV.B @R1,R0
+        TST #B'100000,R0
+        BT KRWD_BF1               ;NO DECEL TO STOP JMP
+        BRA OUT_EXT
+        NOP
+
+
+KRWD_BF1:
+        MOV FRUN_3,R1
+        MOV.W @R1,R0
+        CMP/EQ #0,R0
+        BT KRWD_STILL             ;FRUN=0 STAND STILL
+
+        ;FRUN<>0 RUNNING
+	MOV RSTATUS1_,R1
+	MOV.B @R1,R0
+        TST #B'10,R0		;RUN STEADY STATE JMP OUT
+        BF KRWD_FR1
+	MOV SFLG_,R1
+	MOV.B @R1,R0
+        TST #B'100000,R0	;RUN DEC JMP
+        BF KRWD_DEC
+KRWD_FR1:
+        BRA OUT_EXT
+        NOP
+
+
+KRWD_DEC:
+;        MOV R11_STATUS,R1
+;        MOV.B @R1,R0
+;        TST #1,R0
+;        BF NO_FW_RW
+
+	MOV S_STATUS1_,R1
+	MOV.B @R1,R0
+	TST #B'10000,R0		 	;IF UP/DWN CON.
+	BF  KRWD_FR1			;THEN OUT_EXT
+
+	MOV RSTATUS1_,R1
+	MOV.B @R1,R0
+	TST #B'10000000,R0		;CHECK EXTERNAL SPEED FLAG 
+	BF  KRWD_FR1			;IF THERE ARE EXT.SPEED THEN OUT_EXT
+
+	MOV QSTATUS4_2,R0
+	MOV.B @R0,R0
+	TST #B'100000,R0		;IF LOWER LIMIT FLAG SET THEN OUT_EXT
+	BF KRWD_FR1
+
+	MOV S_STATUS1_,R1
+	MOV.B @R1,R0
+	TST #B'1,R0			;IF JUMP FREQ. FLAG SET THEN OUT_EXT
+	BF KRWD_FR1			
+
+        MOV FLAST_11,R1			;ELSE STORE FLAST TO FSET BEFORE OUT_EXT
+        MOV.W @R1,R1
+        MOV FSET2_,R2 
+        MOV.W R1,@R2
+        BRA OUT_EXT
+        NOP
+
+KRWD_STILL:
+;        MOV PSTATUS2,R1
+;        MOV.B @R1,R0
+;        TST #B'10,R0
+;        BF KRWD_BRK
+        MOV PSTATUS2_,R1
+        MOV.B @R1,R0
+        TST #B'10000,R0		;
+        BF KRWD_R_B
+;        MOV R11_STATUS,R1
+;        TST #1,R0
+;        BF NO_FW_RW
+        MOV PSTATUS2_,R1
+        MOV.B @R1,R0
+        OR #B'10000,R0      
+	MOV.B R0,@R1
+KRWD_R_B:
+
+	MOV S_STATUS1_,R1			
+	MOV.B @R1,R0
+	TST #B'10000,R0			;IF UP/DWN CON.
+	BF  JMP_ST_RUN 			;THEN JMP FIRST RUN
+
+
+	MOV RSTATUS1_,R1
+	MOV.B @R1,R0
+	TST #B'10000000,R0		;CHECK EXTERNAL SPEED FLAG 
+	BF  JMP_ST_RUN 			;IF THERE ARE EXT.SPEED THEN JMP FIRST_RUN SOON
+
+        MOV FLAST_11,R1			;ELSE STORE FLAST TO FSET BEFORE JMP TO FIRST_RUN  
+        MOV.W @R1,R1
+        MOV FSET2_,R2 
+        MOV.W R1,@R2
+        BRA FIRST_RUN
+        NOP
+JMP_ST_RUN:
+	BRA FIRST_RUN
+	NOP
+KRWD_BRK:
+;        MOV FLAST1,R1
+;        MOV.W @R1,R1
+;        MOV STOP_F1,R2
+;        CMP/GE R2,R1
+;        BT KRWD_R_A
+;        MOV R_STATUS,R1
+;        MOV.B R1,@R0
+;        TST #B'10000,R0
+;        BF KRWD_R_A
+        BRA OUT_EXT
+        NOP
+
+        .ALIGN 4
+INP1:		.DATA.L INPORT	
+RSTATUS1_:	.DATA.L _R_STATUS
+PSTATUS2_:	.DATA.L _P_STATUS
+SFLG_:		.DATA.L SYSFLG
+QSTATUS4_2:	.DATA.L _Q_STATUS
+LOWER:		.DATA.L _LOWER
+FSET2_:		.DATA.L FSET
+PBD_HI1:        .DATA.L H'5FFFFC2
+FLAST_11:	.DATA.L FLAST
+FRUN_3:		.DATA.L FRUN
+S_STATUS1_:	.DATA.L _S_STATUS
+        .ALIGN 4
+
+;KRWD_R_A:
+;        MOV FLAST1,R1
+;        MOV.W @R1,R1
+;        MOV START_F1,R2
+;        CMP/GE KRWD_R_A
+;        BF NO_FW_RW
+;        MOV R_STATUS,R1
+;        MOV.B @R1,R0
+;        OR #B'10000,R0
+;        AND #B'11111101,R0
+;        MOV.B R0,@R1
+;        MOV FLAST1,R1
+;        MOV.W @R1,R1
+;        MOV FSET_,R2 
+;        MOV.W R1,@R2
+;        BRA FIRST_RUN
+;        NOP
+
+K_FWD_BF:
+EXT_FBF:
+	MOV FRUN_2,R1
+	MOV.W @R1,R0
+	CMP/EQ #0,R0
+	BF RWD_2_0
+
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	TST #B'100,R0		;START BY KEY ?
+	BF FWDBF		;NO, JMP
+	TST #B'100000,R0        ;YES, CHK DCT STP
+	BF EXTR_OUT;OUT_EXT		;YES, JMP OUT
+FWDBF:	MOV SFLG,R1
+	MOV.B @R1,R0
+	OR #B'10000,R0          ;SET RWD FLG
+	MOV.B R0,@R1
+
+        MOV FLAST_1,R1
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+        BRA FIRST_RUN
+        NOP
+	
+RWD_2_0:
+	MOV FSET_2,R1
+	MOV #0,R0
+	MOV.W R0,@R1
+	BRA OUT_EXT
+	NOP
+
+KRWD_NRUN:
+        MOV FLAST_1,R1
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+
+	MOV SFLG,R1
+	MOV.B @R1,R0
+	OR #B'10000,R0
+	MOV.B R0,@R1
+
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	TST #B'10000,R0
+	BT  EXTR_OUT;OUT_EXT
+
+	BRA FIRST_RUN
+	NOP
+
+EXT_RWD:
+	MOV SFLG,R1
+	MOV.B @R1,R0
+	TST #B'100,R0			;TEST RUN FLG
+	BF EXT_R_BF			;EXT RUN BF JMP
+	BRA EXT_NRUN
+	NOP
+
+EXT_R_BF:
+	TST #B'10000,R0			;TEST FWD/RWD
+	BF EXT_RWD_BF			;EXT RWD BF JMP
+	BRA EXT_FBF
+	NOP
+
+EXT_RWD_BF:
+;        MOV R11_STATUS,R1
+;        TST #1,R0
+;        BF KRB1
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	OR #B'10000,R0			;SET FIRST RUN BIT
+	MOV.B R0,@R1
+	
+	TST #B'100000,R0		;TEST DCT STP BIT
+	BT EXTRBF			;IF NO,JMP
+	AND #B'11011111,R0		;CLR DTC BIT
+	MOV.B R0,@R1
+EXTRBF: BRA KRWD_BF1
+	NOP
+
+KBR1:	MOV SFLG,R1
+	MOV.B @R1,R0
+	TST #B'10000,R0
+	BF KBR2				;IF RWD JMP
+
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	OR #B'10000,R0
+	MOV.B R0,@R1			;ESLE SET FIRST RUN FLG
+
+KBR2:	BRA KRWD_BF1	
+	NOP
+
+EXTR_OUT:
+	BRA OUT_EXT
+	NOP
+
+EXT_NRUN:
+	TST #B'10,R0			;TEST PROG. MODE JMP
+	BF EXTR_OUT
+
+	OR #B'10000,R0			;SET RWD RUN FLG
+	MOV.B R0,@R1
+
+        MOV FLAST_1,R1
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+	
+	BRA FIRST_RUN
+	NOP
+
+CHK_FWD:
+RUN_FWD:
+	MOV RSTATUS1,R1
+	MOV.B @R1,R0
+	AND #B'11110111,R0
+	MOV.B R0,@R1
+
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	TST #B'100,R0            ;IF P_STATUS.2=0 IS KEY START STOP
+	BT K_FWD                 ;JMP
+	BRA EXT_FWD
+	NOP
+
+K_FWD:  MOV SFLG,R1
+        MOV.B @R1,R0
+        TST #B'100,R0
+        BF KFWD_RUN               ;RUN BEFORE
+        BRA KFWD_NRUN
+        NOP
+
+KFWD_RUN:
+        TST #B'10000,R0
+        BT KFWD_BF                ;RUN FWD BEFORE THEN JMP
+        BRA K_RWD_BF              
+	NOP
+
+KFWD_BF:
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+        TST #B'100000,R0
+        BT KFWD_BF1               ;NO DECEL TO STOP JMP
+        BRA OUT_EXT
+        NOP
+
+KFWD_BF1:
+        MOV FRUN_2,R1
+        MOV.W @R1,R0
+        CMP/EQ #0,R0
+        BT KFWD_STILL             ;FRUN=0 STAND STILL
+
+        ;FRUN<>0 RUNNING
+	MOV RSTATUS1,R1
+	MOV.B @R1,R0
+        TST #B'10,R0		;RUN STEADY STATE JMP OUT
+        BF KFWD_FR1
+	MOV SFLG,R1
+	MOV.B @R1,R0
+        TST #B'100000,R0	;RUN DEC JMP
+        BF KFWD_DEC
+KFWD_FR1:
+        BRA OUT_EXT
+        NOP
+
+KFWD_DEC:
+;        MOV R11_STATUS,R1
+;        MOV.B @R1,R0
+;        TST #1,R0
+;        BF NO_FW_RW
+
+        MOV S_STATUS,R1
+        MOV.B @R1,R0
+        TST #B'10000,R0 		;IF UP/DWN.CON.  
+        BF  KFWD_FR1			;THEN OUT_EXT
+
+
+        MOV RSTATUS1,R1
+        MOV.B @R1,R0
+        TST #B'10000000,R0		;CHECK EXTERNAL SPEED FLAG 
+        BF  KFWD_FR1			;IF THERE ARE EXT.SPEED THEN OUT_EXT
+
+	MOV QSTATUS4_1,R0
+	MOV.B @R0,R0
+	TST #B'100000,R0		;IF LOWER LIMIT FLAG SET
+	BF KFWD_FR1 			;THEN OUT_EXT
+
+	MOV S_STATUS,R1	
+	MOV.B @R1,R0
+	TST #B'1,R0			;IF JUMP FREQ. FLAG SET
+	BF  KFWD_FR1			;THEN OUT_EXT
+
+        MOV FLAST_1,R1			;ELSE STORE FLAST TO FSET BEFORE OUT_EXT
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+        BRA OUT_EXT
+        NOP
+
+KFWD_STILL:
+;        MOV PSTATUS2,R1
+;        MOV.B @R1,R0
+;        TST #B'10,R0
+;        BF KFWD_BRK
+        MOV PSTATUS2,R1
+        MOV.B @R1,R0
+        TST #B'10000,R0		;
+        BF KFWD_R_B
+;        MOV R11_STATUS,R1
+;        TST #1,R0
+;        BF NO_FW_RW
+        MOV PSTATUS2,R1
+        MOV.B @R1,R0
+        OR #B'10000,R0      
+	MOV.B R0,@R1
+KFWD_R_B:
+
+	MOV S_STATUS,R1		
+	MOV.B @R1,R0
+	TST #B'10000,R0			;IF UP/DWN. CON          
+	BF  FIRST_RUN			;THEN JMP TO FIRST RUN
+
+
+	MOV RSTATUS1,R1
+	MOV.B @R1,R0
+	TST #B'10000000,R0		;CHECK EXTERNAL SPEED FLAG 
+	BF  FIRST_RUN			;IF THERE ARE EXT.SPEED THEN JMP TO FIRST_RUN SOON
+	
+        MOV FLAST_1,R1			;ELSE STORE FLAST TO FSET BEFORE JMP TO FIRST_RUN
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+        BRA FIRST_RUN
+        NOP
+
+KFWD_BRK:
+;        MOV FLAST1,R1
+;        MOV.W @R1,R1
+;        MOV STOP_F1,R2
+;        CMP/GE R2,R1
+;        BT KFWD_R_A
+;        MOV R_STATUS,R1
+;        MOV.B R1,@R0
+;        TST #B'10000,R0
+;        BF KFWD_R_A
+        BRA OUT_EXT
+        NOP
+;KFWD_F_A:
+;        MOV FLAST1,R1
+;        MOV.W @R1,R1
+;        MOV START_F1,R2
+;        CMP/GE KFWD_F_A
+;        BF NO_FW_RW
+;        MOV R_STATUS,R1
+;        MOV.B @R1,R0
+;        OR #B'10000,R0
+;        AND #B'11111101,R0
+;        MOV.B R0,@R1
+;        MOV FLAST1,R1
+;        MOV.W @R1,R1
+;        MOV FSET_,R2 
+;        MOV.W R1,@R2
+;        BRA FIRST_RUN
+;        NOP
+
+K_RWD_BF:
+EXT_RBF:
+	MOV FRUN_2,R1
+	MOV.W @R1,R0
+	CMP/EQ #0,R0
+	BF FWD_2_0
+
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	TST #B'100,R0		;START B KEY ?
+	BF RWDBF		;NO, JMP
+	TST #B'100000,R0        ;YES, CHK DCT STP
+	BF OUT_EXT_1		;YES, JMP OUT
+RWDBF:	MOV SFLG,R1
+	MOV.B @R1,R0
+	AND #B'11101111,R0          ;SET RWD FLG
+	MOV.B R0,@R1
+
+        MOV FLAST_1,R1
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+        BRA FIRST_RUN
+        NOP
+	
+FWD_2_0:
+	MOV FSET_2,R1
+	MOV #0,R0
+	MOV.W R0,@R1
+OUT_EXT_1:
+	BRA OUT_EXT
+	NOP
+
+KFWD_NRUN:
+        MOV FLAST_1,R1
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+
+	MOV SFLG,R1
+	MOV.B @R1,R0
+	AND #B'11101111,R0
+	MOV.B R0,@R1
+
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	TST #B'10000,R0
+	BT  OUT_EXT_1
+
+	BRA FIRST_RUN
+	NOP
+
+EXT_FWD:
+	MOV SFLG,R1
+	MOV.B @R1,R0
+	TST #B'100,R0			;TEST RUN FLG
+	BF EXT_F_BF			;EXT RUN BF JMP
+	BRA EXTF_NRUN
+	NOP
+
+EXT_F_BF:
+	TST #B'10000,R0			;TEST FWD/RWD
+	BT EXT_FWD_BF			;EXT FWD BF JMP
+	BRA EXT_RBF
+	NOP
+
+EXT_FWD_BF:
+;        MOV R11_STATUS,R1
+;        TST #1,R0
+;        BF KBF_1
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	OR #B'10000,R0			;SET FIRST RUN BIT
+	MOV.B R0,@R1
+	
+	TST #B'100000,R0		;TEST DCT STP BIT
+	BT EXTFBF			;IF NO,JMP
+	AND #B'11011111,R0		;CLR DTC BIT
+	MOV.B R0,@R1
+EXTFBF: BRA KFWD_BF1
+	NOP
+
+KBF_1:	MOV SFLG,R1
+	MOV.B @R1,R0
+	TST #B'10000,R0
+	BT KBF2				;IF FWD JMP
+
+	MOV PSTATUS2,R1
+	MOV.B @R1,R0
+	OR #B'10000,R0
+	MOV.B R0,@R1			;ESLE SET FIRST RUN FLG
+
+KBF2:	BRA KFWD_BF1	
+	NOP
+
+EXTF_NRUN:
+	TST #B'10,R0			;TEST PROG. MODE JMP
+	BT NOT_OUT_EXT
+	BRA OUT_EXT;EXTF_OUT
+	NOP
+NOT_OUT_EXT:
+	AND #B'11101111,R0
+	MOV.B R0,@R1
+
+        MOV FLAST_1,R1
+        MOV.W @R1,R1
+        MOV FSET_2,R2 
+        MOV.W R1,@R2
+	
+	BRA FIRST_RUN
+	NOP
+
+FIRST_RUN:
+	MOV USTATUS3,R1
+	MOV.B @R1,R0
+	TST #B'10,R0
+	BT  NOT_OUT_EXT1
+	BRA OUT_EXT
+	NOP
+NOT_OUT_EXT1:
+	MOV SFLG,R1
+	MOV.B @R1,R0
+	TST #B'100,R0			;IF RUN MODE(FIRST TIME OF FIRST RUN WILL NOT BE RUN MODE)
+	BF  NOT_CLEAR			;THEN NOT_CLEAR DIGTOG
+        MOV DIGTOG,R1			;ELSE CLEAR DIGTOG
+        MOV #4,R0
+        MOV.B R0,@R1
+NOT_CLEAR:
+
+        MOV S_STATUS,R1
+	MOV.B @R1,R0
+	TST #B'100000,R0	;IF UP/DOWN CON. BUT NO X1,X2
+	BT  NOT_SHOW_ZERO  		;THEN SHOW_ZERO
+	BRA SHOW_ZERO
+	NOP
+NOT_SHOW_ZERO:
+;SEQ_FLY1----------------------BEGIN-------------------------------
+	MOV FLAST_1,R1
+	MOV.W @R1,R0
+	MOV STRFRE,R1
+	MOV.W @R1,R1
+	CMP/GE R1,R0			;IF FLAST < START FREQ.
+	BF  NOT_FLYING  		;THEN NOT_FLYING
+	MOV XSTATUS,R1
+	MOV.B @R1,R0
+	TST #B'1,R0
+	BF  NOT_FLYING
+;SEQ_FLY1--------------------END----------------------------------
+;FLYING ----BEGIN------------------------------------------------
+;CORRECT1----------------------BEGIN-----------------------------
+MOV HZ60,R0
+MOV FSAT1,R1
+MOV.W @R1,R1
+CMP/GT R0,R1			;IF PATTERN GREATER THAN 60
+BT NOT_FLYING			;THEN NOT SEARCH
+;CORRECT1------------------------END-----------------------------
+
+;VT_FLY-----------------------BEGIN------------------------------
+;FLYINGC
+;MOV SFLG,R1
+;ADD #1,R1
+;MOV.B @R1,R0
+;TST #B'100,R0                   ;IF V/F CONTROL
+;BF  CHECK_FLY                   ;THEN CHECK_FLY
+;TST #B'10,R0                    ;IF VECTOR CONTROL
+;BT  NOT_FLYING                  ;THEN NOT_FLYING
+;CHECK_FLY:                      ;ELSE CHECK_FLY
+;FLYINGC
+;VT_FLY------------------------END----------------------------------
+        MOV VSTATUS,R1
+	MOV.B @R1,R0
+	TST #B'10000,R0
+	BT  NOT_FLYING
+;SOFT1-------------------------BEGIN----------------------
+	MOV FLUX_COUNT,R2	;INITIAL FLUX_COUNT=100% IN CASE OF SEARCH
+	MOV #100,R3
+	MOV.B R3,@R2
+;SOFT1--------------------------END-----------------------
+        TST #B'100000,R0        ;IF SEARCH SPEED FLG SET
+	BF NOT_1ST_TIME		;THEN NOT FIRST TIMES
+	OR #B'100000,R0		;ELSE THIS FIRST TIMES 
+	MOV.B R0,@R1		;SO SET SEARCHING SPEED FLG
+;FLYINGA
+MOV WSTATUS4,R1
+MOV.B @R1,R0
+OR #B'1000,R0
+MOV.B R0,@R1
+;FLYINGA
+	MOV FLAST_1,R3
+	MOV.W @R3,R3
+	MOV FBACK,R2
+	MOV.W R3,@R2		;BACK UP FLAST TO FBACK(FOR ONLY FIRST TIMES)
+;IMPROVE5
+MOV J30000,R0           ;INITIAL IMIN 1ST SAMPLING TIME(300 A)
+MOV IMIN1,R1
+MOV R0,@R1
+;IMPROVE5
+NOT_1ST_TIME:
+;FLYINGA
+MOV WSTATUS4,R1
+MOV.B @R1,R0
+TST #B'1,R0
+BF  STR_MAX
+MOV FTEMP,R1
+BRA  STR_SETTING
+NOP
+STR_MAX:
+;FLYINGA
+;CORRECT2---------BEGIN------------------------------------------
+;	MOV WSTATUS4,R0
+;	MOV.B @R0,R0
+;	TST #B'10000000,R0
+;	BT  SSL_FIND1
+;	MOV STRFRE,R1
+;	MOV FRUN_2,R0
+;	MOV FRUN_START,R2
+;	MOV.W @R1,R1
+;       MOV.W R1,@R2            ;STORE STR FREQ. TO FRUN_START
+;	MOV.W R1,@R0		;STORE STR FREQ. TO FRUN
+;	MOV FLAST_1,R3
+;	MOV.W R1,@R3			;STORE STR FREQ. TO FLAST
+;	MOV STRFRE,R0
+;	BRA CONVERT_FRE
+;	NOP
+;SSL_FIND1:
+;CORRECT2----------END-------------------------------------------
+        MOV FSAT1,R1            ;@R1 IS FSAT FOR STR FREQ. FOR SEARCHING SPEED
+STR_SETTING:;FLYINGA
+	MOV FRUN_2,R0
+	MOV FRUN_START,R2
+	MOV.W @R1,R1
+;FLYINGB
+MOV K500,R3
+ADD R3,R1
+MOV FSAT1,R3
+MOV.W @R3,R3
+CMP/GT R3,R1
+BF  NOT_LIMIT
+MOV R3,R1
+NOT_LIMIT:
+;FLYINGB
+        MOV.W R1,@R2            ;STORE STR FREQ. TO FRUN_START
+	MOV.W R1,@R0		;STORE STR FREQ. TO FRUN
+	MOV FLAST_1,R3
+	MOV.W R1,@R3			;STORE STR FREQ. TO FLAST
+;SSL_FLY---------------------BEGIN-------------------------------
+	MOV FSAT1,R0
+;CONVERT_FRE:                            ;CORRECT2
+        MOV.W @R0,R0                    ;R0=FSAT
+	MOV FRE2WM,R14
+	JSR @R14;FRE_TO_WM		;CONVERT FSAT TO WMEST FOR INITIAL
+	NOP
+	MOV R0,R2
+	MOV SFLG,R1
+	MOV.B @R1,R0
+	TST #B'10000,R0			;IF FWD ACTION
+	BT  FWD_ACT			;THEN FWD_ACT
+	NEG R2,R2			;ELSE NEGATIVE WM
+FWD_ACT:
+;VT_FLY-----------------------BEGIN-------------------------------------
+	MOV SFLG,R1
+	ADD #1,R1
+	MOV.B @R1,R0
+	TST #B'100,R0			;IF V/F CONTROL
+	BF  NOT_VT_FLY			;THEN CHECK_FLY
+	TST #B'10,R0			;IF SSL CONTROL
+	BF  NOT_VT_FLY			;THEN NOT_FLYING
+	MOV WM_REAL,R1
+	MOV R2,@R1
+	BRA SHOW_ZERO
+	NOP
+NOT_VT_FLY:			;ELSE CHECK_FLY
+;VT_FLY-------------------------END-------------------------------------
+        MOV WM_EST,R1
+	MOV R2,@R1
+;CORRECT2-------------------BEGIN---------------------------------
+;	SHAR R2				;AREA_ADT_PI=(WM_EST*TI)/2
+;CORRECT2--------------------END----------------------------------
+	MOV TI_ADT,R1
+	MOV.W @R1,R1
+	MOV #5,R10
+	DIVS R10,R1
+	MULS R2,R1
+	STS MACL,R2
+;CORRECT2--------------------BEGIN-------------------------------
+	SHAL R2				;AREA_ADT_PI=(WM_EST*TI*2)/5
+;CORRECT2---------------------END--------------------------------
+	MOV VAR,R1
+	MOV R2,@R1
+;SSL_FLY----------------------END--------------------------------
+        BRA SHOW_ZERO
+	NOP
+NOT_FLYING:
+;FLYING------END---------------------------------------------
+
+        MOV STRFRE,R1
+        MOV FRUN_2,R0
+	MOV FRUN_START,R2
+	MOV.W @R1,R1
+;	MOV #50,R1
+	MOV.W R1,@R2
+	MOV.W R1,@R0
+;SOFT1-------------BEGIN-------------------------------
+	MOV SFLG,R1
+	ADD #1,R1
+	MOV.B @R1,R0
+	TST #B'100,R0			;IF V/F CONTROL
+	BF  NOT_SSL			;THEN NOT_SSL
+	TST #B'10,R0			;IF VECTOR CONTROL
+	BT  NOT_SSL			;THEN NOT_SSL
+;SOFT2------------BEGIN------------------------
+	MOV RSTATUS1,R0
+	MOV.B @R0,R0
+	TST #B'100000,R0		;IF DC BREAK IN NOT INITIAL FLUX 10 %
+	BF  NOT_SSL
+;SOFT2--------------END------------------------
+        MOV FLUX_COUNT,R10
+	MOV #10,R0			;INITIAL FLUX 10% FOR ONLY SSL
+	MOV.B R0,@R10 
+NOT_SSL:
+;SOFT1--------------END--------------------------------
+SHOW_ZERO:
+
+;	MOV PBDRH,R10
+;	MOV.B @R10,R0
+;	OR  #B'10000000,R0	;EXT ROM
+;	MOV.B R0,@R10		;ON SST
+
+        MOV PA,R10              ;INT ROM
+        MOV.B @R10,R0		;ON SST
+;        OR  #B'10000000,R0
+	AND #B'01111111,R0
+        MOV.B R0,@R10
+
+	MOV SFLG,R1
+	MOV.B @R1,R0
+	OR  #B'101,R0
+	MOV.B R0,@R1
+
+	MOV TSTATUSE,R2
+	MOV.B @R2,R0
+	TST #B'1,R0		;IF PRESS SET KEY IN RUN MODE
+	BT  ON_OPTO		
+	MOV.B @R1,R0		
+	AND #B'11111110,R0	;THEN SET BLINK MODE FLAG
+	MOV.B R0,@R1
+ON_OPTO:
+	MOV SFLG,R1
+	ADD #1,R1
+	MOV.B @R1,R0
+	TST #B'10,R0
+	BF CHK_ON_OPTO
+	TST #B'100,R0
+	BT ON_OPTO1
+
+CHK_ON_OPTO:
+        MOV S_STATUS,R1
+	MOV.B @R1,R0
+	TST #B'100000,R0	;IF UP/DOWN CON. BUT NO X1,X2
+        BF OFF_OPTO             ;THEN OFF_OPTO(NOT ON PNP)
+
+        MOV RSTATUS1,R1
+	MOV.B @R1,R0
+	TST #B'100000,R0
+	BF  ON_OPTO1
+	MOV FSET_2,R1
+	MOV.W @R1,R0
+	MOV STRFRE,R1
+	MOV.W @R1,R1
+	CMP/GE R1,R0
+	BT ON_OPTO1
+
+OFF_OPTO:
+
+	MOV TSTATUSE,R1
+	MOV.B @R1,R0
+	OR #B'100000,R0
+	MOV.B R0,@R1
+
+;        MOV PA,R1              ;EXT ROM
+;        MOV.B @R1,R0
+;        AND #B'01111111,R0
+;        MOV.B R0,@R1
+
+;        MOV CS1,R2
+;        MOV R2,@R2          ;CS1 ACTIVE
+
+        MOV PBDRH,R1            ;INT ROM
+	MOV.B @R1,R0
+	OR  #B'10000000,R0
+        MOV.B R0,@R1
+
+        MOV D_BUF,R1
+        ADD #4,R1
+        MOV.B @R1,R0
+        OR #B'01000000,R0        ;TURN ON RUN-LED
+        AND #B'11011111,R0       ;OFF STOP
+        MOV.B R0,@R1
+
+	BRA OUT_EXT
+	NOP
+ON_OPTO1:
+	MOV TSTATUSE,R1
+	MOV.B @R1,R0
+	AND #B'11011111,R0
+	MOV.B R0,@R1
+		
+;        MOV PA,R1              ;EXT ROM
+;        MOV.B @R1,R0
+;        OR  #H'80,R0
+;        MOV.B R0,@R1
+
+;        MOV CS1,R2
+;        MOV R2,@R2          ;CS1 ACTIVE
+
+        MOV PBDRH,R1            ;INT ROM
+	MOV.B @R1,R0
+	AND #B'01111111,R0
+        MOV.B R0,@R1
+
+        MOV D_BUF,R1
+        ADD #4,R1
+        MOV.B @R1,R0
+        OR #B'01000000,R0        ;TURN ON RUN-LED
+        AND #B'11011111,R0       ;OFF STOP
+        MOV.B R0,@R1
+	BRA OUT_EXT
+	NOP
+
+		.ALIGN 4
+FRUN_2:		.DATA.L FRUN
+RSTATUS1:	.DATA.L _R_STATUS
+QSTATUS4_1:	.DATA.L _Q_STATUS
+FLAST_1:	.DATA.L FLAST
+S_STATUS:	.DATA.L _S_STATUS
+STRFRE:		.DATA.L _STR_FRE	;START FREQUENCY
+SFLG:		.DATA.L SYSFLG
+FSET_2:		.DATA.L FSET
+FRUN_START:	.DATA.L _FRUN_START
+PSTATUS2:	.DATA.L _P_STATUS
+TSTATUSE:	.DATA.L _T_STATUS
+USTATUS3:	.DATA.L _U_STATUS
+VSTATUS:	.DATA.L _V_STATUS
+WSTATUS4:	.DATA.L _W_STATUS
+XSTATUS:        .DATA.L _X_STATUS
+FBACK:          .DATA.L _FBACK
+FTEMP:		.DATA.L _F_TEMP
+FSAT1:		.DATA.L _F_SAT
+K500:		.DATA.L 500
+DIGTOG:		.DATA.L _DIG_TOG
+IMIN1:          .DATA.L _IMIN
+J30000:         .DATA.L 30000
+FRE2WM:		.DATA.L FRE_TO_WM
+VAR:		.DATA.L _VAR
+WM_EST:		.DATA.L _WM_EST
+WM_REAL:	.DATA.L _WM
+TI_ADT:		.DATA.L _TI_ADT
+HZ60:           .DATA.L 6000
+FLUX_COUNT:	.DATA.L _FLUX_COUNT
+OUT_EXT:

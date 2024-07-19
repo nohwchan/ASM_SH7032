@@ -1,0 +1,151 @@
+;
+;       This is the user function
+; Copyright (C) SOPON SMAIRATH, 1996.
+;          ALL right reserved.
+;  Date : 3/12/1996
+
+        .EXPORT  READ_AD
+        .INCLUDE "MACRO.H"
+        .INCLUDE "RAM_IMP.H"
+        .SECTION IUV_IN,CODE,ALIGN=4
+
+;********************************************************
+; READ CURRENT Iu , Iv
+; R8 := IU_OFF
+; R9 := IV_OFF
+;
+; RETURN  R1 := IU
+; R2 := IV
+;********************************************************
+READ_AD:
+        STS.L   PR,@-SP
+        MOV #H'28,R3                     ;FOR CH0
+        MOV #H'29,R4                     ;FOR CH1
+        MOV #H'2A,R1                     ;FOR CH2
+        MOV #H'2B,R2                     ;FOR CH3
+        MOV #H'2C,R5                     ;FOR CH4
+        MOV ADCSR,R13
+
+        MOV.B R3,@R13
+SADINLP0:
+        MOV.B @R13,R0
+        TST #H'80,R0
+        BT SADINLP0
+        MOV ADDRA,R0                     ;CH0
+        MOV.W @R0,R3
+
+
+        MOV.B R4,@R13
+SADINLP1:
+        MOV.B @R13,R0
+        TST #H'80,R0
+        BT SADINLP1
+        MOV ADDRB,R0                     ;CH1
+        MOV.W @R0,R4
+
+        MOV.B R1,@R13
+SADINLP2:
+        MOV.B @R13,R0
+        TST #H'80,R0
+        BT SADINLP2
+        MOV ADDRC,R0                     ;CH2
+        MOV.W @R0,R1
+
+        MOV.B R2,@R13
+SADINLP3:
+        MOV.B @R13,R0
+        TST #H'80,R0
+        BT SADINLP3
+        MOV ADDRD,R0                     ;CH3
+        MOV.W @R0,R2
+
+        MOV.B R5,@R13
+SADINLP4:
+        MOV.B @R13,R0
+        TST #H'80,R0
+        BT SADINLP4
+        MOV ADDRA,R0                     ;CH3
+        MOV.W @R0,R5
+
+        SHLR2 R1
+        SHLR2 R1                         
+        SHLR2 R1                         
+
+        SHLR2 R2
+        SHLR2 R2                         
+        SHLR2 R2                         
+
+        SHLR2 R3
+        SHLR2 R3                         
+        SHLR2 R3                         
+
+        SHLR2 R4
+        SHLR2 R4                         
+        SHLR2 R4
+
+        SHLR2 R5
+        SHLR2 R5                         
+        SHLR2 R5
+
+        MOV   MASK_AD,R11
+        AND   R11,R1                      ;R1 = VREF
+        AND   R11,R2                      ;R2 = IREF
+        AND   R11,R3                      ;R3 = IU
+        AND   R11,R4                      ;R4 = IV
+        AND   R11,R5                      ;R5 = VDC
+
+        MOV P_STATUS,R0
+        MOV.B @R0,R0
+        TST #1,R0
+        BT AD_REF
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+        
+AD_REF: MOV AD_BAK,R6
+        MOV @R6,R7
+        TST #B'10,R0
+        BT V10
+	ADD R4,R7
+        BRA SAVE_BAK
+        NOP
+V10:
+        ADD R3,R7
+SAVE_BAK:
+        MOV R7,@R6
+        MOV AD_CNT,R7
+        MOV.B @R7,R0
+        CMP/EQ #100,R0
+        BF INC_CNT
+        MOV #0,R0
+        MOV.B R0,@R7
+        MOV @R6,R7
+        MOV R0,@R6
+        MOV #100,R6
+        DIVS R6,R7
+        MOV AD_DAT,R8
+        MOV.W R7,@R8
+        LDS.L @SP+,PR
+        RTS
+        NOP
+INC_CNT:
+        ADD #1,R0
+        MOV.B R0,@R7
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+        .ALIGN 4
+MASK_AD:.DATA.L H'3FF
+ADCSR:  .DATA.L H'5FFFEE8
+ADDR:
+ADDRA:  .DATA.L H'5FFFEE0
+ADDRB:  .DATA.L H'5FFFEE2
+ADDRC:  .DATA.L H'5FFFEE4
+ADDRD:  .DATA.L H'5FFFEE6
+P_STATUS:.DATA.L _P_STATUS
+AD_BAK: .DATA.L _AD_BAK
+AD_CNT: .DATA.L _AD_CNT
+AD_DAT: .DATA.L _AD_DAT
+COUNT:  .DATA.L 200
+        .END
+

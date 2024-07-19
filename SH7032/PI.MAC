@@ -1,0 +1,96 @@
+        .EXPORT PI_CON
+        .INCLUDE "MACRO.H"
+        .INCLUDE "RAM_IMP.H"
+        .SECTION PI,CODE,ALIGN=4
+;*****************************************************************************
+;
+; Specify  :  PI CONTROLLER
+; OUTPUT = Kp.e + (A'+e)/Ti  , A'=A/DT
+;
+; Argument :
+; R1 = e ERROR (12 BITS)
+; R2 = KP
+; R3 = Ti = DT/(ki*2^6)
+; Return   : R1 = OUTPUT
+;
+; Use Reg. : R1,R2
+;*****************************************************************************
+PI_CON:
+           STS.L  PR,@-SP
+           MOV    AREA,R0
+           MOV    @R0,R4        ;R4 = A
+	   MOV	  R4,R5		;R5 = A(K-1)
+           ADD    R1,R4        ;R4 = A + e
+
+           MOV    R4,@R0       ;STORE (A+e)/Ti
+
+	   DIVS   R3,R4
+	   MOV    #100,R6
+           MULS   R6,R4       ;R4 = (A+e)/Ti
+	   STS    MACL,R4
+
+;	    SHAR  R4
+;	    SHAR  R4
+
+;	    SHAL  R4
+;	    SHAL  R4
+
+            MULS   R2,R1
+            STS    MACL,R1      ;R1 = Kp.e
+
+            ADD    R4,R1        ;IQ_COM = R1 = Kp.e + (A + e)/Ti
+
+            SHAR   R1
+            SHAR   R1
+            SHAR   R1
+            SHAR   R1           ;SCALE DOWN PI GAIN BY / 2^6
+            SHAR   R1
+            SHAR   R1
+
+            MOV    IQMAX,R8
+	    MOV	   @R8,R8
+;	    MOV    #3,R9
+;	    MULS   R8,R9
+;	    STS    MACL,R8
+;	    SHAR   R8		;MUL 3/2
+	MOV	IQ_LIMT,R9
+	MOV.W	@R9,R9
+	MULS	R8,R9
+	STS	MACL,R8
+	MOV	#100,R9
+	DIVS	R9,R8
+	
+	    NEG    R8,R9
+;            MOV    IQMIN,R9
+
+            CMP/GT R8,R1
+            BF     LOWCH
+            MOV    R8,R1
+	
+            MOV    AREA,R0
+            MOV    R5,@R0     ;ANTI INTEGRATOR WINDING UP BY RESETTIG AREA
+
+            BRA    OUTIQ
+            NOP                ;IQ LIMITER
+
+LOWCH:      CMP/GT R9,R1
+            BT     OUTIQ
+            MOV    R9,R1
+
+            MOV    AREA,R0
+            MOV    R5,@R0     ;ANTI INTEGRATOR WINDING UP
+
+OUTIQ:
+;            MOV    AREA,R0
+;            MOV    @R0,R12     ;TEST&&&&&&&&&&&&&&&&&&&&&&&&
+
+            LDS.L  @SP+,PR
+            RTS
+            NOP
+            .ALIGN 4
+;******************** PI_CON *******************************************
+AREA:       .DATA.L _VAR1
+IQMAX:      .DATA.L _ISQ_RATED;1440         ;MAX IQ 4.3*2^6*3;15*2^6*1.5(OL)
+IQ_LIMT:	.DATA.L	IQ_LIM
+;IQMIN:      .DATA.L -1440        ;MIN IQ
+            .END

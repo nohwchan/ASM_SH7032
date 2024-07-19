@@ -1,0 +1,1720 @@
+;*****************************************************************************
+;       This is the user2 function
+; 	Copyright (C) Kitiphot sitilertpisan, 1994.
+;       ALL right reserved.
+;  	Date : 29/12/1994
+; Last update: 28/8/1995
+;*****************************************************************************
+;TBASE:  .EQU    5079;912
+DEAD_T: .EQU    80
+	.EXPORT	IUV2DQ,IUV2XY
+        .EXPORT SQ_ROOT,FRE_TO_WM
+	.EXPORT PWM_GEN,SINCOS,INITIALIZE,STORE_TEMP,WRITE_PARA
+        .EXPORT FRE_TO_RPM,RPM_TO_FRE,MC_TO_FRE
+	.IMPORT	_SINCOS,_ABCD_I,TRX1WORD,EE_WR
+	.INCLUDE "MACRO.H"
+        .INCLUDE "RAM_IMP.H"
+
+	.SECTION USER2,CODE,ALIGN=4
+;*****************************************************************************
+;
+; Specify  :  CHANGE AXIS OF Ilu,Ilv  ---> Id,Iq
+;
+; Argument :  R0 = ANGLE (0-119)
+;             R1 = Ilu
+;             R2 = Ilv
+;
+; Return   : R1 = Id 
+;            R2 = Iq
+;
+; Use Reg. : R1,R2,R3,R4,R8
+;*****************************************************************************
+IUV2DQ:
+		MOV	R0,@-SP
+		STS.L	PR,@-SP
+
+		MOV	ABITABLE,R8		;SET ADDRESS OF COEF.
+		MOV	#8,R9			;* 8 TO INDEX(LW=4*2BYTE)
+		MULS	R9,R0
+		STS	MACL,R0			;AND KEEP INDEX IN R0
+		MOV.W	@(R0,R8),R9		;READ A(Q) => R9
+		ADD	#2,R0
+		MOV.W	@(R0,R8),R10		;READ B(Q) => R10
+		ADD	#2,R0
+		MOV.W	@(R0,R8),R11		;READ C(Q) => R11
+		ADD	#2,R0
+		MOV.W	@(R0,R8),R12		;READ D(Q) => R12
+		BSR	COF_ABCD
+		NOP
+
+		MOV     SCALE_I,R3
+;		MOV	I_GAIN,R3
+;		MOV.W	@R3,R3
+                DIVS    R3,R1               ;R1 := Id
+		MOV	SCALE_I,R3
+;		MOV	I_GAIN,R3
+;		MOV.W	@R3,R3
+                DIVS    R3,R2               ;R2 := Iq
+		LDS.L	@SP+,PR
+		MOV	@SP+,R0
+		RTS
+		NOP
+
+;*****************************************************************************
+; Specify  :  CALCULATE IV_D=AX+BY  &  IV_Q=CX+DY
+;
+; Argument :
+;             R1 = X [Iu , Vuv]  R9 = A     R10 = B
+;             R2 = Y [Iv , Vvw]  R11= C     R12 = D
+;
+; Return   : R1 = I_V_d		; I or V IN D-AXIS
+;            R2 = I_V_q		; I or V IN Q-AXIS
+;
+; Use Reg. : R1,R2,R3,R4,R8,R9,R10,R11,R12
+;*****************************************************************************
+COF_ABCD:
+		STS.L	PR,@-SP
+		MOV	R1,R3
+		MOV	R2,R4
+		MULS	R1,R9
+		STS	MACL,R1			;R1 := A(Q)*Vuv
+		MULS	R2,R10
+		STS	MACL,R2			;R2 := B(Q)*Vvw
+		ADD	R2,R1			;R1 := A(Q)*Vuv + B(Q)*Vvw
+
+		MULS	R3,R11
+		STS	MACL,R3			;R3 := C(Q)*Vuv
+		MULS	R4,R12
+		STS	MACL,R2			;R2 := D(Q)*Vvw
+		LDS.L	@SP+,PR
+		ADD	R3,R2			;R2 := C(Q)*Vuv + D(Q)*Vvw
+		RTS
+		NOP
+
+;*****************************************************************************
+;
+; Specify  :  CHANGE AXIS OF Ilu,Ilv  ---> Ix,Iy
+;
+; Argument :  
+;             R1 = Iu
+;             R2 = Iv
+;
+; Return   : R1 = Ix 
+;            R2 = Iy
+;
+; Use Reg. : R1,R2,R3,R4,R6
+;*****************************************************************************
+IUV2XY:
+		STS.L	PR,@-SP
+		MOV	R5,@-SP
+		MOV	V1732,R3
+		MULS	R1,R3
+		STS	MACL,R3
+		MOV	V1414,R4
+		DIVS	R4,R3
+		MOV	V1000,R4
+		MULS	R1,R4
+		STS	MACL,R5
+		MOV	R3,R1
+		MOV	V1414,R3
+		MULS	R2,R3
+		STS	MACL,R2
+		DIVS	R3,R5
+		DIVS	R4,R2
+		ADD	R5,R2		
+		MOV	@SP+,R5
+		LDS.L	@SP+,PR
+		RTS
+		NOP
+
+;CORRECT1----------------------BEGIN------------------------------------------
+;*****************************************************************************
+; Specify  :  FIRST ORDER FILTER
+;
+; Argument :
+;             R1 = START ADDRESS OF
+;                        Vi(k)			;WORD
+;                        Vi(k-1)		;WORD
+;                        Vo(k-1)		;LWORD
+;             R2 = START ADDRESS OF
+;                        b(0) = 32		;WORD
+;                        b(1) = 32		;WORD
+;
+; Return   : R1 = Vo(k)				;16 BITS
+;
+; Use Reg. : R1,R2,R3,R4,R5,R6
+;*****************************************************************************
+;FILTER:
+;        MOV.W   @R1,R5          ; R5 = Vi(k)
+;        CLRMAC
+;        MAC.W   @R1+,@R2+       ;MAC KEEP DATA:
+;        MAC.W   @R1+,@R2+       ;MAC= Vi(k)*b(0) + Vi(k-1)*b(1)
+;        STS     MACL,R4         ;R4 = Vi(k)*b(0) + Vi(k-1)*b(1)
+
+;        MOV.L   @R1+,R6         ;R6 = Vo(k-1)/100
+;        MOV.L   @R1,R3          ;R3 = Vo(k-1)
+;        MOV     V100,R12
+;        MULS    R6,R12
+;        STS     MACL,R7
+;        SUB     R7,R3           ;R3-R7 = Vo(k-1) - 100*Vo(k-1)/100
+;        MOV     #93,R12
+;        MULS    R3,R12
+;        STS     MACL,R3         ;R3 = err*93
+;        MOV     V100,R10
+;        DIVS    R10,R3
+;        ADD     R3,R4
+;        MULS    R6,R12
+;        STS     MACL,R6         ;R6 = Vo(k-1) * 93
+;        ADD     R4,R6
+;        MOV     R6,R7
+;        MOV     V100,R10
+;        DIVS    R10,R6
+
+	;******** KEEP VAR FOR NEXT LOOP ****
+;        MOV.L   R7,@R1                  ;STORE Vo(k) as Vo(k-1)
+;        MOV.L   R6,@-R1                 ;STORE Vo(k)/100 as Vo(k-1)/100
+;        MOV.W   R5,@-R1                 ;STORE Vi(k) as Vi(k-1)
+;        MOV     R6,R1
+;        RTS
+;        NOP
+;CORRECT1--------------------END----------------------------------------
+;******************** IUV2DQ,VUV2DQ ************************************
+		.ALIGN	4
+ABITABLE:	.DATA.L _ABCD_I
+SCALE_I:        .DATA.L 16384	;2777 ONLY FOR  CT 30A/4V.
+SCALE_V:	.DATA.L 16384
+V100:		.DATA.L	100
+V1000:		.DATA.L 1000
+V1414:		.DATA.L 1414
+V1732:		.DATA.L 1732
+I_GAIN:		.DATA.L _I_GAIN
+                .ALIGN  4
+;****************************************************************************
+; Specify  :  FIND SQUARE ROOTS OF VALUE
+;
+; Argument : R1 = X^2
+;
+; Return   : R13 = X 
+;
+; Use Reg. : R1,R2,R3,R13
+;*****************************************************************************
+SQ_ROOT:
+		STS.L	PR,@-SP
+
+MOV #1,R2
+CMP/GT R2,R1
+BT  NOT_01
+MOV R1,R13
+BRA OUT_SQ_ROOT1
+NOP
+NOT_01:
+MOV #9,R2
+CMP/GE R2,R1
+BF STR_PROCESS
+MOV #11,R2
+CMP/GT R2,R1
+BT STR_PROCESS
+MOV #3,R13
+BRA OUT_SQ_ROOT1
+NOP
+STR_PROCESS:
+
+                MOV     #2,R2           ;R2=XOLD=1(INITIAL)
+REPEAT:
+		MOV	R2,R3		;R3=R2=XOLD
+		MOV	R1,R13		;R1=R13=X^2
+		DIVS	R2,R13		
+		ADD	R3,R13
+		SHAR	R13		;R13=XNEW=(X^2/XOLD+XOLD)/2
+	MOV	R13,R12		
+	MOV	R3,R4
+	SUB	R12,R3
+	MOV	R3,R12
+	SHAL	R12
+	BF	POSITIVE
+	NEG	R3,R3
+POSITIVE:
+	MOV	#1,R12
+	CMP/GT	R12,R3
+	BF	OUT_SQ_ROOT
+
+;		CMP/EQ	R3,R13		;IF XNEW=XOLD
+;		BT	OUT_SQ_ROOT	;THEN XNEW IS SQUARE ROOTS OF X^2
+		MOV	R13,R2		;ELSE REPLACE XOLD WITH XNEW AND
+		BRA	REPEAT		;REPEAT
+		NOP
+OUT_SQ_ROOT:
+	CMP/GT	R4,R13
+	BF	OUT_SQ_ROOT1
+	MOV	R4,R13
+OUT_SQ_ROOT1:
+		LDS.L	@SP+,PR
+		RTS
+		NOP
+;****************************************************************************
+; Specify :  CHANGE FREQUENCY TO RPM AND M/C SPEED
+;
+; Argument :  R10 = FREQUENCY 	
+;		
+; Return :    R1=RPM,R2=M/C SPEED
+;
+; Use Reg. : R1,R2,R3,R10,R0
+;
+;***************************************************************************
+FRE_TO_RPM:
+	STS.L	PR,@-SP
+	MOV	RPMSCALE,R3
+	MOV.B	@R3,R3
+	MULS	R3,R10
+	STS	MACL,R1
+	MOV	#100,R3
+	DIVS	R3,R1
+
+	MOV	MCSCALE,R3
+	MOV.W	@R3,R3
+	MULS	R3,R10
+	STS	MACL,R2
+
+	MOV	MCMUL,R0
+	MOV.W	@R0,R0
+	MOV	#10,R3
+	MULS	R0,R3
+	STS	MACL,R0
+	DIVSN	R0,R2
+	MOV	MAX_LIM,R0
+	CMP/GE	R0,R2
+	BF	NOT_MAX
+	MOV	R0,R2
+NOT_MAX:
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+;****************************************************************************
+; Specify :  CHANGE RPM TO FREQUENCY
+;
+; Argument :  R1 = RPM 	
+;		
+; Return :    R10 = FREQUENCY
+;
+; Use Reg. : R1,R2,R10
+;
+;***************************************************************************
+RPM_TO_FRE:
+	STS.L	PR,@-SP
+	MOV	#100,R2
+	MULS	R1,R2
+	STS	MACL,R10
+	MOV	RPMSCALE,R2
+	MOV.B	@R2,R2
+        MOV     #0,R1
+	CMP/EQ	R1,R2
+	BF	OK_P
+	MOV	#0,R10
+	MOV	#1,R2
+OK_P:	
+        DIVS    R2,R10
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+;****************************************************************************
+; Specify :  CHANGE M/C SPEED TO FREQUENCY
+;
+; Argument :  R2 = M/C SPEED
+;		
+; Return :    R10 = FREQUENCY
+;
+; Use Reg. : R1,R2,R10
+;
+;***************************************************************************
+MC_TO_FRE:
+	STS.L	PR,@-SP
+	MOV	BIT16,R0
+	CMP/GE  R0,R2
+	BT	OVER16BIT
+	MOV	MCMUL,R1
+	MOV.W	@R1,R1
+	MOV	#10,R0
+	MULS	R0,R1
+	STS	MACL,R1
+	MULS	R1,R2
+	STS	MACL,R10
+	MOV	MCSCALE,R1
+	MOV.W	@R1,R0
+        CMP/EQ  #0,R0
+	BF	OK_P1
+	MOV	#0,R10
+	MOV	#1,R0
+OK_P1:	
+        DIVSN   R0,R10
+
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+OVER16BIT:
+	SHAR	R2
+	SHAR	R2
+	MOV	MCMUL,R1
+	MOV.W	@R1,R1
+	MOV	#10,R0
+	MULS	R0,R1
+	STS	MACL,R1
+	MULS	R1,R2
+	STS	MACL,R10
+	SHAL	R10
+	SHAL	R10
+	MOV	MCSCALE,R1
+	MOV.W	@R1,R0
+        CMP/EQ  #0,R0
+        BF      OK_P2
+	MOV	#0,R10
+	MOV	#1,R0
+OK_P2:
+        DIVSN   R0,R10
+
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+
+	.ALIGN 4
+RPMSCALE:	.DATA.L RPM_SCALE
+MCSCALE:	.DATA.L MC_SCALE
+MCMUL:		.DATA.L MC_MUL
+MAX_LIM:	.DATA.L 99999
+BIT16:		.DATA.L 32767
+        .ALIGN 4
+;SSL_FLY-------------------BEGIN-------------------------------------------
+;****************************************************************************
+; Specify :  CHANGE FREQUENCY(Hz) TO WM(RAD/S.)
+;
+; Argument :  R0=F(Hz)
+;		
+; Return :    R0 = WM(RAD/S.)
+;
+; Use Reg. :R0,R1,R2
+;
+;***************************************************************************
+FRE_TO_WM:
+	STS.L	PR,@-SP
+        MOV     V4118,R1
+        MULS    R1,R0
+        STS     MACL,R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        SHAR    R0
+        MOV     POLE2,R2
+        MOV.B   @R2,R2
+        SHAR    R2
+        DIVSN   R2,R0
+        LDS.L   @SP+,PR
+	RTS
+	NOP
+
+	.ALIGN 4
+V4118:          .DATA.L 4118
+POLE2:          .DATA.L _POLE
+        .ALIGN 4
+;SSL_FLY-------------------END----------------------------------------------
+
+;****************************************************************************
+; Specify :  INITIALIZE MOTOR PARAMETER (PRO_SIZE.H)
+;
+; Argument :  	
+;		
+; Return :    
+;
+; Use Reg. : R1,R2,R10
+;
+;***************************************************************************
+INITIALIZE:
+	STS.L	PR,@-SP
+;        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+;	MOV.B @R1,R0
+;	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+;	MOV R_STA,R1
+;	ADD R0,R1
+;	MOV.W @R1,R10		;GET R_STATOR OF INVERTER EACH VERSION
+;CORRECT2---------------------BEGIN------------------------------------
+;        MOV RS,R10
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+	MOV.B @R1,R0
+	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+        MOV R_STA,R1
+	ADD R0,R1
+        MOV.W @R1,R10           ;GET R_ROTOR OF INVERTER EACH VERSION
+        MOV #105,R11
+	MOV EEWRITE,R14		;WRITE R_STATOR IN EEPROM (#105)
+	JSR @R14;EE_WR
+        NOP
+;CORRECT2-----------------------END------------------------------------
+;        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+;	MOV.B @R1,R0
+;	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+;	MOV L_STA,R1
+;	ADD R0,R1
+;	MOV.W @R1,R10		;GET L_STATOR OF INVERTER EACH VERSION
+	MOV LS,R10
+	MOV #106,R11
+	MOV EEWRITE,R14		;WRITE L_STATOR IN EEPROM (#106)
+	JSR @R14;EE_WR
+        NOP
+        
+;        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+;	MOV.B @R1,R0
+;	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+;	MOV SIGMA_STA,R1
+;	ADD R0,R1
+;	MOV.W @R1,R10		;GET pLs OF INVERTER EACH VERSION
+	MOV PLS,R10
+	MOV #107,R11
+	MOV EEWRITE,R14		;WRITE pLs IN EEPROM (#107)
+	JSR @R14;EE_WR
+        NOP
+
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+	MOV.B @R1,R0
+	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+	MOV R_ROT,R1
+	ADD R0,R1
+	MOV.W @R1,R10		;GET R_ROTOR OF INVERTER EACH VERSION
+	MOV #108,R11
+	MOV EEWRITE,R14		;WRITE R_ROTOR IN EEPROM (#108)
+	JSR @R14;EE_WR
+        NOP
+        
+;        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+;	MOV.B @R1,R0
+;	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+;	MOV L_ROT,R1
+;	ADD R0,R1
+;	MOV.W @R1,R10		;GET L_ROTOR OF INVERTER EACH VERSION
+	MOV LR,R10
+	MOV #109,R11
+	MOV EEWRITE,R14		;WRITE L_ROTOR IN EEPROM (#109)
+	JSR @R14;EE_WR
+        NOP
+
+;        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+;	MOV.B @R1,R0
+;	MOV IQ_STA,R1
+;	ADD R0,R1
+;	MOV @R1,R10		;GET IQ_STATOR OF INVERTER EACH VERSION
+	MOV ISQ,R10
+	MOV #110,R11
+	MOV EEWRITE,R14		;WRITE IQ_STATOR IN EEPROM (#110)
+	JSR @R14;EE_WR
+        NOP
+        
+;        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+;	MOV.B @R1,R0
+;	MOV ID_STA,R1
+;	ADD R0,R1
+;	MOV @R1,R10		;GET ISD OF INVERTER EACH VERSION
+	MOV ISD,R10
+	MOV #111,R11
+	MOV EEWRITE,R14		;WRITE ISD IN EEPROM (#111)
+	JSR @R14;EE_WR
+        NOP
+
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+	MOV.B @R1,R0
+	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+	MOV ROT_ROT,R1
+	ADD R0,R1
+	MOV.W @R1,R10		;GET RR/LR WITH SCALE OF INVERTER EACH VERSION
+	MOV #112,R11
+	MOV EEWRITE,R14		;WRITE RR/LR WITH SCALE IN EEPROM (#112)
+	JSR @R14;EE_WR
+        NOP
+
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+	MOV.B @R1,R0
+	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+	MOV TIME_ROT,R1
+	ADD R0,R1
+	MOV.W @R1,R10		;GET TR OF INVERTER EACH VERSION
+	MOV #113,R11
+	MOV EEWRITE,R14		;WRITE TR IN EEPROM (#113)
+	JSR @R14;EE_WR
+        NOP
+
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+        MOV.B @R1,R0
+        SHAR R0                 ;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+        MOV R_STA,R1
+        ADD R0,R1
+        MOV.W @R1,R10           ;GET RS OF INVERTER EACH VERSION
+        MOV PLS,R11             ;GET pLS (EQUAL EVERY SIZE)
+        DIVS R11,R10
+	MOV #114,R11
+	MOV EEWRITE,R14		;WRITE TS IN EEPROM (#114)
+	JSR @R14;EE_WR
+        NOP
+        
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+	MOV.B @R1,R0
+	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+	MOV IDQ_SCALE,R1
+	ADD R0,R1
+	MOV.W @R1,R10		;GET IDQSCL OF INVERTER EACH VERSION
+	MOV #115,R11
+	MOV EEWRITE,R14		;WRITE IDQSCL IN EEPROM (#115)
+	JSR @R14;EE_WR
+        NOP
+
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+	MOV.B @R1,R0
+	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+	MOV KPADP,R1
+	ADD R0,R1
+	MOV.W @R1,R10		;GET KP_ADP OF INVERTER EACH VERSION
+	MOV #64,R11
+	MOV EEWRITE,R14		;WRITE KP_ADP IN EEPROM (#64)
+	JSR @R14;EE_WR
+        NOP
+        
+        MOV VER,R1              ;ELSE GET ADDRESS OF EACH VERSION
+	MOV.B @R1,R0
+	SHAR R0			;DIV 2 SINCE DATA OF CURRENT IS WORD (NOT LONG WORD)
+	MOV TIADP,R1
+	ADD R0,R1
+	MOV.W @R1,R10		;GET TI_ADP OF INVERTER EACH VERSION
+	MOV #65,R11
+	MOV EEWRITE,R14		;WRITE TI_ADP IN EEPROM (#65)
+	JSR @R14;EE_WR
+        NOP
+
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+
+	.ALIGN 4
+VER:		.DATA.L _VER
+EEWRITE:	.DATA.L EE_WR
+;R_STA:		.DATA.L STATOR_RES
+;L_STA:		.DATA.L STATOR_IND
+;SIGMA_STA:	.DATA.L STATOR_SIG
+R_ROT:		.DATA.L ROTOR_RES
+;L_ROT:		.DATA.L ROTOR_IND
+;IQ_STA:	.DATA.L STATOR_IQ
+;ID_STA:	.DATA.L STATOR_ID
+ROT_ROT:	.DATA.L ROTOR_ROT
+TIME_ROT:	.DATA.L ROTOR_TIME
+;TIME_STA:	.DATA.L STATOR_TIME
+IDQ_SCALE:	.DATA.L SCALE_IDQ
+KPADP:		.DATA.L ADAPT_KP
+TIADP:		.DATA.L ADAPT_TI
+R_STA:          .DATA.L STATOR_RES
+RS:             .DATA.L 800
+LS:		.DATA.L 92
+PLS:		.DATA.L 14
+LR:		.DATA.L 78
+TS:		.DATA.L 57
+ISD:		.DATA.L 480
+ISQ:		.DATA.L 960
+
+;STATOR_IQ:	.DATA.L 100,200,300,400,500,600,700,800,900,100
+;		.DATA.L 100,100,100,100,100,100,100,100,100
+;STATOR_ID:	.DATA.L 100,200,300,400,500,600,700,800,900,100
+;		.DATA.L 100,100,100,100,100,100,100,100,100
+	.ALIGN 4
+	.ALIGN 2
+;STATOR_RES:	.DATA.W 100,100,100,100,100,100,100,100,100,100
+;		.DATA.W 100,100,100,100,100,100,100,100,100
+;STATOR_IND:	.DATA.W 100,200,300,400,500,600,700,800,900,100
+;		.DATA.W 100,100,100,100,100,100,100,100,100
+;STATOR_SIG:	.DATA.W 100,100,100,100,100,100,100,100,100,100
+;		.DATA.W 100,100,100,100,100,100,100,100,100
+;ROTOR_IND:	.DATA.W 100,100,100,100,100,100,100,100,100,100
+;		.DATA.W 100,100,100,100,100,100,100,100,100
+;STATOR_TIME:	.DATA.W 100,100,100,100,100,100,100,100,100,100
+;		.DATA.W 100,100,100,100,100,100,100,100,100
+
+ROTOR_RES:	.DATA.W 902,902,631,540,450,450,360,360,360,405
+		.DATA.W 405,360,360,270,270,270,270,270,270,270
+		.DATA.W 270,1171,902,902,630,540,450,450,360
+ROTOR_ROT:	.DATA.W 504,504,350,300,250,250,200,200,200,225
+		.DATA.W 225,200,200,150,150,150,150,150,150,150
+		.DATA.W 150,651,504,504,350,300,250,250,200
+ROTOR_TIME:	.DATA.W 8,8,5,5,4,4,3,3,3,4
+		.DATA.W 4,3,3,2,2,2,2,2,2,2
+		.DATA.W 2,10,8,8,5,5,4,4,3
+SCALE_IDQ:      .DATA.W 666,833,1000,1667,2500,3333,5000,6667,8333,10000
+		.DATA.W 13333,16667,20000,25000,32767,32767,32767,32767,32767,32767
+                .DATA.W 32767,577,1153,1443,1732,2887,4330,5773,8660
+;CORRECT2-----------------------BEGIN---------------------------------
+STATOR_RES:     .DATA.W 782,782,782,736,476,476,412,406,406,335
+                .DATA.W 300,300,300,300,300,300,300,300,300,300
+                .DATA.W 300,782,782,782,782,736,476,476,412
+;CORRECT2------------------------END----------------------------------
+;CORRECT2-----------------------BEGIN---------------------------------
+ADAPT_KP:       .DATA.W 903,903,903,425,200,145,53,44,27,28
+                .DATA.W 23,13,10,6,3,2,2,2,2,2
+                .DATA.W 2,903,903,903,903,425,200,145,53
+;                .DATA.W 482,482,482,227,107,78,28,23,15,15
+;                .DATA.W 12,7,5,4,2,1,1,1,1,1
+;                .DATA.W 1,482,482,482,482,227,107,78,28
+ADAPT_TI:        .DATA.W 23,23,23,11,102,140,387,468,750,717
+                 .DATA.W 886,1555,2022,3122,7441,8676,8676,8676,8676,8676
+                 .DATA.W 8676,23,23,23,23,11,102,140,387
+;                .DATA.W 5,5,5,11,24,33,91,110,176,168
+;                .DATA.W 207,364,473,731,1741,2030,2030,2030,2030,2030
+;                .DATA.W 2030,5,5,5,5,11,24,33,91
+;CORRECT2------------------------END---------------------------------
+	.ALIGN 4
+;****************************************************************************
+; Specify :  STORE TEMP MOTOR PARAMETER FOR CHANGE SIZE (RE_SIZE.H)
+;
+; Argument :  	
+;		
+; Return :    
+;
+; Use Reg. : R1,R2,R10
+;
+;***************************************************************************
+STORE_TEMP:
+	STS.L	PR,@-SP
+;        MOV IQ_STA1,R1
+;	ADD R0,R1
+;	MOV @R1,R2
+	MOV ISQ1,R2
+	MOV ISQ_RATEDT,R1
+	MOV R2,@R1 	
+
+;	MOV ID_STA1,R1
+;	ADD R0,R1
+;	MOV @R1,R2
+	MOV ISD1,R2
+	MOV ISD_RATEDT,R1
+        MOV R2,@R1      
+
+	SHAR R0
+;CORRECT2----------------BEGIN--------------------------------
+        MOV R_STA1,R1
+        ADD R0,R1
+        MOV.W @R1,R2
+;        MOV RS1,R2
+	MOV R_STATORT,R1
+	MOV.W R2,@R1
+;CORRECT2----------------END-----------------------------------
+
+;	MOV L_STA1,R1
+;	ADD R0,R1
+;	MOV.W @R1,R2
+	MOV LS1,R2
+	MOV L_STATORT,R1
+	MOV.W R2,@R1
+
+;	MOV SIGMA_STA1,R1
+;	ADD R0,R1
+;	MOV.W @R1,R2
+	MOV PLS1,R2
+	MOV SIGMA_LT,R1
+	MOV.W R2,@R1
+
+	MOV R_ROT1,R1
+	ADD R0,R1
+	MOV.W @R1,R2
+	MOV R_ROTORT,R1
+	MOV.W R2,@R1
+
+;	MOV L_ROT1,R1
+;	ADD R0,R1
+;	MOV.W @R1,R2
+	MOV LR1,R2
+	MOV L_ROTORT,R1
+	MOV.W R2,@R1
+
+	MOV ROT_ROT1,R1
+	ADD R0,R1
+	MOV.W @R1,R2
+	MOV RLT,R1
+	MOV.W R2,@R1
+
+	MOV TIME_ROT1,R1
+	ADD R0,R1
+	MOV.W @R1,R2
+	MOV ROTORTT,R1
+	MOV.W R2,@R1
+
+;	MOV TIME_STA1,R1
+;	ADD R0,R1
+;	MOV.W @R1,R2
+	MOV TS1,R2
+	MOV STATORTT,R1
+	MOV.W R2,@R1
+
+	MOV IDQ_SCALE1,R1
+	ADD R0,R1
+	MOV.W @R1,R2
+	MOV IDQ_SCL9T,R1
+	MOV.W R2,@R1
+
+	MOV KPADP1,R1
+	ADD R0,R1
+	MOV.W @R1,R2
+	MOV KP_ADTT,R1
+	MOV.W R2,@R1
+
+	MOV TIADP1,R1
+	ADD R0,R1
+	MOV.W @R1,R2
+	MOV TI_ADTT,R1
+        MOV.W R2,@R1
+
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+;****************************************************************************
+; Specify :  WRITE TEMP MOTOR PARAMETER AFTER CHANGE SIZE TO EEPROM (USER.MAC)
+;
+; Argument :  	
+;		
+; Return :    
+;
+; Use Reg. : R1,R2,R10
+;
+;***************************************************************************
+WRITE_PARA:
+	STS.L	PR,@-SP
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV ISQ_RATEDT,R1
+        MOV @R1,R10
+        MOV #110,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV ISD_RATEDT,R1
+        MOV @R1,R10
+        MOV #111,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV R_STATORT,R1
+        MOV.W @R1,R10
+        MOV #105,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV L_STATORT,R1
+        MOV.W @R1,R10
+        MOV #106,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV SIGMA_LT,R1
+        MOV.W @R1,R10
+        MOV #107,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV R_ROTORT,R1
+        MOV.W @R1,R10
+        MOV #108,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV L_ROTORT,R1
+        MOV.W @R1,R10
+        MOV #109,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV RLT,R1
+        MOV.W @R1,R10
+        MOV #112,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV ROTORTT,R1
+        MOV.W @R1,R10
+        MOV #113,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV STATORTT,R1
+        MOV.W @R1,R10
+        MOV #114,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV IDQ_SCL9T,R1
+        MOV.W @R1,R10
+        MOV #115,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV KP_ADTT,R1
+        MOV.W @R1,R10
+        MOV #64,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+        MOV TCSR,R1
+        MOV TCNT_DAT,R10            ;CLEAR WATCHDOG
+        MOV.W R10,@R1		    ;(SINCE WRITE EEPROM 2 TIMES CONTINUE) 	
+
+        MOV TI_ADTT,R1
+        MOV.W @R1,R10
+        MOV #65,R11
+        MOV EEWR,R14
+        JSR @R14;EE_WR
+        NOP
+
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+
+	.ALIGN 4
+RS1:		.DATA.L 800
+LS1:		.DATA.L 92
+PLS1:		.DATA.L 14
+LR1:		.DATA.L 78
+TS1:		.DATA.L 57
+ISD1:		.DATA.L 480
+ISQ1:		.DATA.L 960
+;IQ_STA1:       .DATA.L STATOR_IQ
+;ID_STA1:	.DATA.L STATOR_ID
+R_STA1:        .DATA.L STATOR_RES
+;L_STA1:	.DATA.L STATOR_IND
+;SIGMA_STA1:	.DATA.L STATOR_SIG
+R_ROT1:		.DATA.L ROTOR_RES
+;L_ROT1:	.DATA.L ROTOR_IND
+ROT_ROT1:	.DATA.L ROTOR_ROT
+TIME_ROT1:	.DATA.L ROTOR_TIME
+;TIME_STA1:	.DATA.L STATOR_TIME
+IDQ_SCALE1:	.DATA.L SCALE_IDQ
+KPADP1:		.DATA.L ADAPT_KP
+TIADP1:		.DATA.L ADAPT_TI
+ISQ_RATEDT:	.DATA.L _ISQ_RATEDT
+ISD_RATEDT:	.DATA.L _ISD_RATEDT
+R_STATORT:	.DATA.L _R_STATORT
+L_STATORT:	.DATA.L _L_STATORT
+SIGMA_LT:	.DATA.L _SIGMA_LT
+R_ROTORT:	.DATA.L _R_ROTORT
+L_ROTORT:	.DATA.L _L_ROTORT
+RLT:		.DATA.L R_LT
+ROTORTT:	.DATA.L ROTOR_TT
+STATORTT:	.DATA.L STATOR_TT
+IDQ_SCL9T:	.DATA.L IDQSCL9T
+KP_ADTT:	.DATA.L _KP_ADTT
+TI_ADTT:        .DATA.L _TI_ADTT
+TCSR:           .DATA.L H'5FFFFB8
+TCNT_DAT:       .DATA.L H'5A00
+EEWR:		.DATA.L EE_WR
+        .ALIGN 4
+;*****************************************************************************
+;
+; Specify  :  PWM SIGNAL GENERATE
+;				
+; Argument :
+;		R0 = Q
+;		R1 = Vd
+;		R2 = Vq
+;		R3 = Vdc
+;	       R12 = UCX
+;	       R13 = UCY
+; Return   : TIME FOR GENERATE PWM SIGNAL TO BRB3,BRA4,BRB4
+;
+; Use Reg. : ALL REG.
+;*****************************************************************************
+
+PWM_GEN:
+	STS.L	PR,@-SP
+	MOV	VB_MIN,R8
+	CMP/GT	R8,R3		;IF VDC > VbaseMin THEN OK
+	BT	OKP
+	MOV	R8,R3
+
+OKP:	MOV	#13,R5		;sqrt(2/3)*2^4
+	MULS	R5,R3
+	MOV	VBASE,R8
+	STS	MACL,R3
+	DIVS16	R3		;Vbase := sqrt(2/3) * Vdc
+	MOV	R3,@R8		;Keep Vbase
+	BSR	SINCOS		;FIND SIN(Q),COS(Q)
+	NOP
+;---------------------------------------------------------
+;  FIND		VX := Vd.COS(Q) - Vq.SIN(Q)
+;               VY := Vq.COS(Q) + Vd.SIN(Q)
+;
+;  FIND		VX.SQRT(3)
+;---------------------------------------------------------
+        MULS	R1,R9			;FIND Vd.COS(Q)
+        STS	MACL,R3			;R3 := Vd.COS(Q)
+        MULS    R2,R10                  ;FIND Vq.SIN(Q)
+        MOV     SQRT3,R7                ;   R7 :=SQRT(3)*1000
+        STS     MACL,R6                 ;R6 := Vq.SIN(Q)
+        MULS	R1,R10			;FIND Vd.SIN(Q)
+        SUB	R6,R3			;   VX:=R3:=Vd.COS(Q)-Vq.SIN(Q)
+	STS	MACL,R4			;R4 := Vd.SIN(Q)
+	MULS	R2,R9			;FIND Vq.COS(Q)
+	STS	MACL,R5			;R5 := Vq.COS(Q)
+	MOV     SIN90,R11
+        MOV     R11,R10                 ;   R10 := SIN90
+	ADD	R5,R4			;   VY:=R4:=Vq.COS(Q)+Vd.SIN(Q)
+        DIVS    R11,R3                  ;VX:=R3:=R3/R11:=VX/SIN90
+        DIVS    R10,R4                  ;VY:=R4:=R4/R10:=VY/SIN90
+
+	ADD	R12,R3			;R3:=VX+UCX
+	MOV	R3,R14
+	ADD	R13,R4			;R4:=VY+UCY  !!DEAD TIME COMPENSATE		
+
+	MOV	VX,R1
+	MOV.L	R3,@R1			;KEEP VX,VY
+	MOV	VY,R1
+	MOV.L	R4,@R1
+;---------------------------------------------------------
+;  FIND SEGMENT OF VOLTAGE COMMAND 
+;	R1 := SEGMENT NUMBER
+;---------------------------------------------------------
+SEGF:	MOV	R3,R1			;R1 := VX'
+	CMP/PZ	R3			;IF VX >= 0 THEN  LABEL1
+	BT	LABEL1
+	NEG	R3,R1			;ELSE VX':=R1:= -VX
+LABEL1:	
+	MULS	R1,R7			;VX'.SQRT(3)*2000
+	MOV	SCALE1,R11
+	STS	MACL,R12		;    R12:=VX'.SQRT(3)*2000
+	DIVS	R11,R12			;    R12:=VX'.SQRT(3)
+	CMP/PZ  R4			;IF VY >= 0 THEN  SEG123(SEG1,2,3)
+	BT	SEG123
+	NEG	R4,R13
+	MOV	R13,R4			;ELSE VY ;= -VY (SEG4,5,6)
+	;******* SEGMENT IS IN (4),(5),(6) ***********
+SEG456:	CMP/PZ	R3			;IF VX >= 0 THEN SEG56
+	BT	SEG56
+SEG45:	CMP/GT	R12,R4			;IF VY > VX'SQRT(3) THEN SEG4
+	BF	SEG4			;ELSE SEG5
+	BT	SEG5
+SEG56:	CMP/GT	R12,R4			;IF VY > VX'SQRT(3) THEN SEG5
+	BT	SEG5			;ELSE SEG6
+	BF	SEG6
+
+SEG4:	BRA	ENDS
+	MOV	#4,R0			;SEGMENT := 4
+
+SEG5:	BRA	ENDS
+	MOV	#5,R0			;SEGMENT := 5
+
+SEG6:	BRA	ENDS
+	MOV	#6,R0			;SEGMENT := 6
+
+	;******* SEGMENT IS IN (1),(2),(3) ***********
+SEG123:	CMP/PZ	R3			;IF VX >= 0 THEN SEG12
+	BT	SEG12
+SEG23:	CMP/GT	R12,R4			;IF VY > VX'SQRT(3) THEN SEG2
+	BT	SEG2			;ELSE SEG3
+	BF	SEG3
+SEG12:	CMP/GT  R12,R4			;IF VY > VX'SQRT(3) THEN SEG2
+	BT	SEG2			;ELSE SEG1
+	BF	SEG1
+
+SEG1:	BRA	ENDS
+	MOV	#1,R0			;SEGMENT := 1
+
+SEG2:	BRA	ENDS
+	MOV	#2,R0			;SEGMENT := 2
+
+SEG3:	BRA	ENDS
+	MOV	#3,R0			;SEGMENT := 3
+ENDS:	MOV	SEG,R1			;KEEP SEGMENT
+	MOV	R0,@R1
+	MOV	R0,R6			;R6 := SEGMENT
+	MOV	VX,R1
+	MOV.L	@R1,R7			;R7 := VX
+	MOV	VY,R0
+	MOV.L	@R0,R8			;R8 := VY
+	BRA	CALT			;GOTO CACULATE TIME
+	NOP
+;******************** VARIABLE AREA ******************************
+	.ALIGN 4
+VX:	.DATA.L	_VX
+VY:	.DATA.L	_VY
+SEG:	.DATA.L	_SEG
+
+;******************** CONSTANT AREA ******************************
+	
+SIN90:	.DATA.L	32767
+SQRT3:  .DATA.L	3464			;SRQT(3)*2000
+SCALE1:	.DATA.L 2000			;SCALE OF SQRT(3)
+
+	.ALIGN 4
+;---------------------------------------------------------
+; CALCULATE TIME WEIGH FOR EACH VECTOR
+;	R6 := SEGMENT NO.
+;	R7 := Vx
+;	R8 := Vy
+;---------------------------------------------------------
+CALT:	
+	MOV	ISQRT3,R1
+	MULS	R1,R8
+	STS	MACL,R8			;R8 := Vy/SQRT(3)*2000
+	MOV	SCALE2,R1
+	DIVS	R1,R8			;R8 := Vy/SQRT(3)
+
+	MOV	R8,R9			;R9 := R8
+	MOV	T_BASE,R1		;R1 := Time base
+        MOV.W   @R1,R1
+	MOV	VBASE,R0
+	MOV	@R0,R2			;R2 := Voltage base
+;;;	MOV	VBASE,R2
+	MOV	R6,R0
+	BRA	S1			;GO TO SEGMENT 1	
+	NOP
+;******************** CONSTANT AREA ******************************
+	.ALIGN 4
+ISQRT3:	.DATA.L 1155			;1/SQRT(3) * 2000
+SCALE2: .DATA.L 2000                    ;SCALE OF 1/SQRT(3)
+VB_MIN: .DATA.L 800
+VBASE:  .DATA.L _VBASE
+T_BASE: .DATA.L _TBASE                    ;MUST CHANGE IN INIT.SRC TOO.
+;;;_VBASE:	.DATA.L	2032
+
+	.ALIGN 4
+S1:	CMP/EQ	#1,R0
+	BF	S2
+	SUB	R8,R7			;R7 := V4 := Vx-Vy/(SQRT(3))
+	MOV	#2,R3
+	MULS	R3,R8
+	STS	MACL,R8			;R8 := V5 := 2*Vy/(SQRT(3))
+	MOV	R2,R3
+	MOV	R1,R4
+	MULS	R1,R7
+	STS	MACL,R7
+	DIVS	R2,R7			;R7 := T4 := Tbase*V4/Vbase
+	MULS	R1,R8
+	STS	MACL,R8
+	DIVS	R3,R8			;R8 := T5 := Tbase*V5/Vbase
+	ADD	R7,R8			;R8 := Tn
+	CMP/GE	R1,R8			;IF Tn >= Tbase THEN OVERMOD
+	BT	OVER1
+	SUB	R8,R4			;Tbase - Tn
+	SHAR	R4			;R1 := Tu := (Tbase - Tn)/2
+        ADD     R4,R7                   ;R7 := Tv := Tu + T4
+        ADD     R4,R8                   ;R8 := Tw := Tu + Tn
+
+	MOV	R4,R11			;R11 := Tu
+        MOV     R8,R12                  ;R12 := Tw
+        MOV     R7,R13                  ;R13 := Tv
+        BRA     ENDCALT1                ;OVERMOD1
+	NOP
+OVER1:	
+	MOV	#2,R11			;R11 := Tu := 2
+	MULS	R1,R7			;R7 := Tbase * T4
+	STS	MACL,R7
+        DIVS    R8,R7                   ;R7 := Tv := Tbase * T4 / (T4+T5)
+	ADD	#-2,R1                   ;R1 := Tw := Tbase - 2
+        MOV     R1,R12                  ;R12 := Tw
+        MOV     R7,R13                  ;R13 := Tv
+	BRA	ENDCALT
+	NOP
+
+S2:	CMP/EQ	#2,R0
+	BF	S3
+	MOV	R7,R3
+	ADD	R8,R7			;R7 := V5 := Vx+Vy/(SQRT(3))
+	SUB	R3,R8			;R8 := V1 := -Vx+Vy/(SQRT(3))
+
+	MOV	R2,R3
+	MOV	R1,R4
+	MULS	R1,R7
+	STS	MACL,R7
+	DIVS	R2,R7			;R7 := T5 := Tbase*V5/Vbase
+	MULS	R1,R8
+	STS	MACL,R8
+	DIVS	R3,R8			;R8 := T1 := Tbase*V1/Vbase
+
+	ADD	R8,R7			;R7 := Tn
+	CMP/GE	R1,R7			;IF Tn >= Tbase THEN OVERMOD
+	BT	OVER2
+	SUB	R7,R4			;Tbase - Tn
+        SHAR    R4                      ;R4 := Tv := (Tbase - Tn)/2
+        ADD     R4,R8                   ;R8 := Tu := Tv + T1
+        ADD     R4,R7                   ;R7 := Tw := Tv + Tn
+	MOV	R8,R11			;R11 := Tu
+        MOV     R7,R12                  ;R12 := Tw
+        MOV     R4,R13                  ;R13 := Tv
+        BRA     ENDCALT1                ;OVERMOD1
+	NOP
+OVER2:	
+        MOV     #2,R13                  ;R13 := Tv := 2
+	MULS	R1,R8			;R8 := Tbase * T1
+	STS	MACL,R8
+	DIVS	R7,R8			;R8 := Tu := Tbase * T1 / (T1+T5)
+	ADD	#-2,R1			;R1 := Tw := Tbase - 2
+        MOV     R1,R12                  ;R12 := Tw
+	MOV	R8,R11			;R11 := Tu
+	BRA	ENDCALT
+	NOP
+
+S3:	CMP/EQ	#3,R0
+	BF	S4
+	MOV	R8,R9
+	MOV	#2,R3
+	MULS	R3,R8
+	STS	MACL,R8			;R8 := V1 := 2*Vy/(SQRT(3))
+	ADD	R7,R9
+	NEG	R9,R7			;R7 := V3 := -Vx-Vy/(SQRT(3))
+	
+	MOV	R2,R3
+	MOV	R1,R4
+	MULS	R1,R8
+	STS	MACL,R8
+	DIVS	R2,R8			;R8 := T1 := Tbase*V1/Vbase
+	MULS	R1,R7
+	STS	MACL,R7
+	DIVS	R3,R7			;R7 := T3 := Tbase*V3/Vbase
+
+	ADD	R8,R7			;R7 := Tn
+	CMP/GE	R1,R7			;IF Tn >= Tbase THEN OVERMOD
+	BT	OVER3
+	SUB	R7,R4			;Tbase - Tn
+        SHAR    R4                      ;R2 := Tv := (Tbase - Tn)/2
+        ADD     R4,R8                   ;R8 := Tw := Tw + T1
+        ADD     R4,R7                   ;R7 := Tu := Tw + Tn
+	MOV	R7,R11			;R11 := Tu
+        MOV     R8,R12                  ;R12 := Tw
+        MOV     R4,R13                  ;R13 := Tv
+        BRA     ENDCALT1                ;OVERMOD1
+	NOP
+OVER3:
+        MOV	#2,R13                  ;R13 := Tv := 2
+	MULS	R1,R8			;R8 := Tbase * T1
+	STS	MACL,R8
+        DIVS	R7,R8			;R8 := Tw := Tbase * T1 / (T1+T3)
+	ADD	#-2,R1			;R1 := Tu := Tbase - 2
+        MOV	R8,R12                  ;R12 := Tw
+	MOV	R1,R11			;R11 := Tu
+	BRA	ENDCALT
+	NOP
+
+S4:	CMP/EQ	#4,R0
+	BF	S5
+	MOV	R8,R9
+	SUB	R7,R8			;R8 := V3 := -Vx+Vy/(SQRT(3))
+	NEG	R9,R7
+	MOV	#2,R9
+	MULS	R9,R7
+	STS	MACL,R7			;R7 := V2 := -2*Vy/(SQRT(3))
+	
+	MOV	R2,R3
+	MOV	R1,R4
+	MULS	R1,R8
+	STS	MACL,R8
+	DIVS	R2,R8			;R8 := T3 := Tbase*V4/Vbase
+	MULS	R1,R7
+	STS	MACL,R7
+	DIVS	R3,R7			;R7 := T2 := Tbase*V5/Vbase
+
+	ADD	R7,R8			;R8 := Tn
+	CMP/GE	R1,R8			;IF Tn >= Tbase THEN OVERMOD
+	BT	OVER4
+	SUB	R8,R4			;Tbase - Tn
+        SHAR    R4                      ;R4 := Tw := (Tbase - Tn)/2
+        ADD     R4,R7                   ;R7 := Tv := Tw + T2
+        ADD     R4,R8                   ;R8 := Tu := Tw + Tn
+	MOV	R8,R11			;R11 := Tu
+        MOV     R4,R12                  ;R12 := Tw
+        MOV     R7,R13                  ;R13 := Tv
+        BRA     ENDCALT1                ;OVERMOD1
+	NOP
+OVER4:
+	MOV     #2,R12                  ;R12 := Tw := 2
+	MULS	R1,R7			;R7 := Tbase * T2
+	STS	MACL,R7
+        DIVS    R8,R7                   ;R7 := Tv := Tbase * T2 / (T2+T3)
+	ADD	#-2,R1                   ;R1 := Tu := Tbase - 2
+        MOV     R7,R13                  ;R13 := Tv
+	MOV	R1,R11			;R11 := Tu
+	BRA	ENDCALT
+	NOP
+
+S5:	CMP/EQ	#5,R0
+	BF	S6
+	MOV	R8,R9
+	ADD	R7,R8			;R8 := V2 := -Vx-Vy/(SQRT(3))
+	NEG	R8,R8
+	SUB	R9,R7			;R7 := V6 := Vx-Vy/(SQRT(3))
+
+	MOV	R2,R3
+	MOV	R1,R4
+	MULS	R1,R7
+	STS	MACL,R7
+	DIVS	R2,R7			;R7 := T6 := Tbase*V6/Vbase
+	MULS	R1,R8
+	STS	MACL,R8
+	DIVS	R3,R8			;R8 := T2 := Tbase*V2/Vbase
+
+	ADD	R8,R7			;R7 := Tn
+	CMP/GE	R1,R7			;IF Tn >= Tbase THEN OVERMOD
+	BT	OVER5
+	SUB	R7,R4			;Tbase - Tn
+        SHAR    R4                      ;R4 := Tw := (Tbase - Tn)/2
+	ADD	R4,R8			;R8 := Tu := Tu + T2
+        ADD     R4,R7                   ;R7 := Tv := Tu + Tn
+	MOV	R8,R11			;R11 := Tu
+        MOV     R4,R12                  ;R12 := Tw
+        MOV     R7,R13                  ;R13 := Tv
+        BRA     ENDCALT1                ;OVERMOD1
+	NOP
+OVER5:
+        MOV     #2,R12                  ;R12 := Tw := 2
+	MULS	R1,R8			;R8 := Tbase * T2
+	STS	MACL,R8
+	DIVS	R7,R8			;R8 := Tu := Tbase * T2 / (T2+T6)
+	ADD	#-2,R1			;R1 := Tv := Tbase - 2
+        MOV	R8,R11			;R11 := Tu
+	MOV	R1,R13			;R13 := Tv
+	BRA	ENDCALT
+	NOP
+
+S6:	ADD	R8,R7			;R7 := V4 := Vx+Vy/(SQRT(3))
+	MOV	#2,R3
+	MULS	R3,R8
+	STS	MACL,R3
+	NEG	R3,R8			;R8 := V6 := -2*Vy/(SQRT(3))
+	
+	MOV	R2,R3
+	MOV	R1,R4
+	MULS	R1,R7
+	STS	MACL,R7
+	DIVS	R2,R7			;R7 := T4 := Tbase*V4/Vbase
+	MULS	R1,R8
+	STS	MACL,R8
+	DIVS	R3,R8			;R8 := T6 := Tbase*V6/Vbase
+
+	ADD	R7,R8			;R8 := Tn
+	CMP/GE	R1,R8			;IF Tn >= Tbase THEN OVERMOD
+	BT	OVER6
+	SUB	R8,R4			;Tbase - Tn
+	SHAR	R4			;R2 := Tu := (Tbase - Tn)/2
+        ADD     R4,R7                   ;R7 := Tw := Tu + T4
+        ADD     R4,R8                   ;R8 := Tv := Tu + Tn
+	MOV	R4,R11			;R11 := Tu
+        MOV     R7,R12                  ;R12 := Tw
+        MOV     R8,R13                  ;R13 := Tv
+        BRA     ENDCALT1                ;OVERMOD1
+	NOP
+OVER6:
+        MOV	#2,R11	 		;R11 := Tu := 2
+	MULS	R1,R7			;R7 := Tbase * T4
+	STS	MACL,R7
+	DIVS    R8,R7                   ;R7 := Tw := Tbase * T4 / (T4+T6)
+	ADD	#-2,R1			;R1 := Tv := Tbase - 2
+        MOV	R7,R12			;R12 := Tw
+        MOV	R1,R13			;R13 := Tv
+	BRA	ENDCALT
+	NOP
+;OVERMOD1-----------------BEGIN---------------------------------
+ENDCALT1:
+        MOV     #DEAD_T+1,R1                  ;CHECK FOR MINNIMAL VALUE (TIMEDELAY+1)
+MOV IINV,R0
+MOV @R0,R0
+MOV K8000,R2
+CMP/GE R2,R0
+BF  SMALL_SIZE2
+ADD #20,R1
+SMALL_SIZE2:
+        CMP/GE  R1,R11
+        BT      R11_N01
+        MOV     R1,R11
+R11_N01: CMP/GE  R1,R12                  ;CHECK MINIMAL VALUE OF R12
+        BT      R12_N01
+        MOV     R1,R12
+R12_N01: CMP/GE  R1,R13                  ;CHECK MINIMAL VALUE OF R13
+        BT      R13_N01
+        MOV     R1,R13
+R13_N01: MOV     TBASE,R1               ;CHECK MAXIMAL VALUE OF R11
+        MOV.W   @R1,R1
+        ADD     #-DEAD_T-1,R1
+MOV IINV,R0
+MOV @R0,R0
+MOV K8000,R2
+CMP/GE R2,R0
+BF  SMALL_SIZE3
+ADD #-20,R1
+SMALL_SIZE3:
+
+        CMP/GT  R1,R11                   ;OVERMOD1
+        BF      R11_NO1
+        MOV     R1,R11
+R11_NO1: CMP/GT  R1,R12                  ;OVERMOD1;CHECK MAXIMAL VALUE OF R12
+         BF      R12_NO1
+         MOV     R1,R12
+R12_NO1: CMP/GT  R1,R13                  ;OVERMOD1;CHECK MAXIMAL VALUE OF R13
+         BF      R13_NO1
+         MOV     R1,R13
+R13_NO1:
+        BRA     RUN_M
+        NOP
+;OVERMOD1------------------END----------------------------------
+ENDCALT:
+;OVERMOD1-------------BEGIN--------------------------
+        MOV     R11,R8
+	MOV	R12,R9
+	MOV	R13,R10
+;OVERMOD1-------------END----------------------------
+        MOV     #DEAD_T+1,R1                  ;CHECK FOR MINNIMAL VALUE (TIMEDELAY+1)
+;IMPROVE
+MOV IINV,R0
+MOV @R0,R0
+MOV K8000,R2
+CMP/GE R2,R0
+BF  SMALL_SIZE
+ADD #20,R1
+SMALL_SIZE:
+;IMPROVE
+        CMP/GE  R1,R11
+	BT	R11_N0
+;OVERMOD1--------------BEGIN---------------------------
+        MOV TBASE,R0
+        MOV.W @R0,R0
+        ADD #100,R0
+        MOV R0,R11
+;        MOV     R1,R11
+;OVERMOD1--------------END-----------------------------
+R11_N0: CMP/GE  R1,R12                  ;CHECK MINIMAL VALUE OF R12
+	BT	R12_N0
+;OVERMOD1---------------BEGIN--------------------------
+        MOV TBASE,R0
+        MOV.W @R0,R0
+        ADD #100,R0
+        MOV R0,R12
+;        MOV     R1,R12
+;OVERMOD1---------------END-----------------------------
+R12_N0: CMP/GE  R1,R13                  ;CHECK MINIMAL VALUE OF R13
+	BT	R13_N0
+;OVERMOD1--------------BEGIN----------------------------
+        MOV TBASE,R0
+        MOV.W @R0,R0
+        ADD #100,R0
+        MOV R0,R13
+;        MOV     R1,R13
+;OVERMOD1--------------END------------------------------
+R13_N0: MOV     TBASE,R1               ;CHECK MAXIMAL VALUE OF R11
+        MOV.W   @R1,R1
+        ADD     #-DEAD_T-1,R1
+;IMPROVE
+MOV IINV,R0
+MOV @R0,R0
+MOV K8000,R2
+CMP/GE R2,R0
+BF  SMALL_SIZE1
+ADD #-20,R1
+SMALL_SIZE1:
+;IMPROVE
+        CMP/GT  R1,R8                   ;OVERMOD1
+	BF	R11_NO
+;OVERMOD1---------------BEGIN-----------------------
+        MOV TBASE,R0
+        MOV.W @R0,R0
+        ADD #90,R0
+        MOV R0,R11
+;        MOV     R1,R11
+;OVERMOD1----------------END-------------------------
+R11_NO: CMP/GT  R1,R9                  ;OVERMOD1;CHECK MAXIMAL VALUE OF R12
+	BF	R12_NO
+;OVERMOD1----------------BEGIN-----------------------
+        MOV TBASE,R0
+        MOV.W @R0,R0
+        ADD #90,R0
+        MOV R0,R12
+;        MOV     R1,R10
+;OVERMOD1----------------END-------------------------
+R12_NO: CMP/GT  R1,R10                  ;OVERMOD1;CHECK MAXIMAL VALUE OF R13
+	BF	R13_NO
+;OVERMOD1---------------BEGIN------------------------
+        MOV TBASE,R0
+        MOV.W @R0,R0
+        ADD #90,R0
+        MOV R0,R13
+;        MOV     R1,R13
+;OVERMOD1----------------END-------------------------
+R13_NO:
+;        MOV     SYSFLG1,R0
+;        MOV.B   @R0,R0
+;        TST     #B'100,R0
+;        BT      NOT_RUN_M
+;	MOV	FRUN1,R0
+;	MOV.W	@R0,R0
+;	MOV	#50,R1                  ;STOP FREQ
+;	CMP/GE  R1,R0			
+;	BT	RUN_M
+;NOT_RUN_M:
+;        MOV     TBASE,R0
+;        MOV.W   @R0,R0
+;        MOV     R0,R11
+;        MOV     R0,R12
+;        MOV     R0,R13
+RUN_M:
+;OVERMOD1--------------------BEGIN-------------------------
+;        MOV     BRB3,R0
+;        MOV     BRA4,R1
+;        MOV     BRB4,R2
+
+        MOV  BRB3B1,R0
+        MOV  BRA4B1,R1
+        MOV  BRB4B1,R2
+;OVERMOD1---------------------END--------------------------
+        MOV.W   R11,@R0                 ;BRB3 := Tu
+	MOV.W   R12,@R2                 ;BRB4 := Tw
+	MOV.W   R13,@R1                 ;BRA4 := Tv
+       
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+;******************************************************************************
+;
+; Specify  :  FIND VALUE OF SIN(Q),COS(Q)
+;
+; Argument :  R0 = [ANGLE]
+;
+; Return   : R10 := SIN(Q) , R9 := COS(Q)
+;
+; Use Reg. : R9,R10,R8,R11
+;*****************************************************************************
+SINCOS:
+                MOV     R11,@-SP
+                MOV     R8,@-SP
+                MOV     R7,@-SP
+                MOV     R0,@-SP
+                STS.L   PR,@-SP
+                MOV     SINTABLE,R8              ;SET ADDRESS OF SINTABLE
+                MOV     R0,R7                    ;R7=SETA WITH SIGN
+                SHAL    R7
+                BF      GOTO                     ;ABSOLUTE SETA PROCESS
+                NEG     R0,R0
+
+GOTO:
+                MOV     #2,R9                   ;*2 TO INDEX(W=2BYTE)
+                MULS    R9,R0
+                STS     MACL,R0                 ;AND KEEP INDEX IN R9
+                MOV.W   @(R0,R8),R10            ;READ SINE(Q) => R10
+                BF      OUTSINE
+                NEG     R10,R10                 ;FOR NEGATIVE SETA
+
+OUTSINE:
+                MOV     OFFSET,R11              ;R11=90*4*2,90*ANGLE_RESOL*INDEX
+                ADD     R11,R0                  ;R0 = SETA+OFFSET, FOR COSINE
+                MOV     MAXANG,R11              ;R11=360*4*2=360*ANGLE_RESOL*INDEX
+                CMP/GE  R11,R0
+                BF      OUTCOSIN
+                SUB     R11,R0                  ;R0=SETA-360*4*2
+
+OUTCOSIN:       MOV.W   @(R0,R8),R9             ;READ COSINE(Q) => R9
+                LDS.L   @SP+,PR
+                MOV     @SP+,R0
+                MOV     @SP+,R7
+                MOV     @SP+,R8
+                MOV     @SP+,R11
+                RTS
+                NOP
+
+;***********************************************************************
+                .ALIGN 4
+OFFSET:         .DATA.L  90*4*2                ;90*ANGLE_RESOLUTION*INDEX
+MAXANG:         .DATA.L  360*4*2               ;360*ANGLE_RESOLUTION*INDEX
+MSB_OR:         .DATA.L  H'80
+MSB_AND:        .DATA.L  H'7F
+SINTABLE:       .DATA.L  _SINCOS
+BRB3B1:         .DATA.L  BRB3B
+BRA4B1:         .DATA.L  BRA4B
+BRB4B1:         .DATA.L  BRB4B
+SYSFLG1:        .DATA.L  SYSFLG
+TBASE:          .DATA.L  _TBASE
+PA:		.DATA.L  H'5FFFFC0
+FRUN1:		.DATA.L  FRUN
+IINV:           .DATA.L I_INV
+K8000:          .DATA.L 8000
+;CORRECT1------------------BEGIN----------------------------
+;NORMALIZE:
+;        STS.L   PR,@-SP
+
+;*******************************************************
+;Normalize Parameter with 3hp Motor (isd|3hp = 480 A) **
+;ISD_NOR : ISD_RATED
+;*******************************************************
+;        MOV ISD_3HP,R1          ;R1 = ISD_3HP = 480
+;        MOV ISD_RATED1,R0
+;        MOV @R0,R2              ;R2 = ISD_RATED
+;        MOV R1,@R0              ;ISD_RATED := ISD_3HP
+
+;        MOV R1,R3               ;R3 = ISD_3HP
+;        MOV R2,R4               ;R4 = ISD_RATED
+
+;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+;ISQ_NOR : ISD_3HP/ISD_RATED * ISQ_RATED !!  
+;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+;        MOV ISQ_RATED1,R0
+;        MOV @R0,R5              ;R5 = ISQ_RATED
+;        MULS R5,R3
+;        STS  MACL,R5            ;R5 = ISD_3HP*ISQ_RATED
+;        DIVS R4,R5              ;R5 = ISD_3HP*ISQ_RATED/ISD_RATED = ISQ_NOR
+;        MOV R5,@R0              ;ISQ_RATED = ISQ_NOR
+
+;        MOV R1,R3               ;R3 = ISD_3HP
+;        MOV R2,R4               ;R4 = ISD_RATED
+
+;##############################################
+;R_STATOR_NOR : ISD_RATED/ISD_3HP * R_STATOR ## 
+;##############################################
+
+;        MOV R_STATOR1,R0
+;        MOV.W @R0,R5            ;R5 = R_STATOR
+;        MULS R5,R4
+;        STS MACL,R5             ;R5 = R_STATOR*ISD_RATED
+;        DIVS R3,R5              ;R5 = R_STATOR*ISD_RATED/ISD_3HP
+;        MOV.W R5,@R0            ;R_STATOR = R_STATOR_NOR
+
+;        MOV R1,R3               ;R3 = ISD_3HP
+;        MOV R2,R4               ;R4 = ISD_RATED
+
+
+;############################################
+;R_ROTOR_NOR : ISD_RATED/ISD_3HP * R_ROTOR ## 
+;############################################
+
+;        MOV R_ROTOR1,R0
+;        MOV.W @R0,R5            ;R5 = R_ROTOR
+;        MULS R5,R4
+;        STS MACL,R5             ;R5 = R_ROTOR*ISD_RATED
+;        DIVS R3,R5              ;R5 = R_ROTOR*ISD_RATED/ISD_3HP
+;        MOV.W R5,@R0            ;R_ROTOR = R_ROTOR_NOR
+
+;        MOV R1,R3               ;R3 = ISD_3HP
+;        MOV R2,R4               ;R4 = ISD_RATED
+
+;##############################################
+;L_STATOR_NOR : ISD_RATED/ISD_3HP * L_STATOR ## 
+;##############################################
+
+;        MOV L_STATOR1,R0
+;        MOV.W @R0,R5            ;R5 = L_STATOR
+;        MULS R5,R4
+;        STS MACL,R5             ;R5 = L_STATOR*ISD_RATED
+;        DIVS R3,R5              ;R5 = L_STATOR*ISD_RATED/ISD_3HP
+;        MOV.W R5,@R0            ;L_STATOR = L_STATOR_NOR
+
+;        MOV R1,R3               ;R3 = ISD_3HP
+;        MOV R2,R4               ;R4 = ISD_RATED
+
+
+;############################################
+;L_ROTOR_NOR : ISD_RATED/ISD_3HP * L_ROTOR ## 
+;############################################
+
+;        MOV L_ROTOR1,R0
+;        MOV.W @R0,R5            ;R5 = L_ROTOR
+;        MULS R5,R4
+;        STS MACL,R5             ;R5 = L_ROTOR*ISD_RATED
+;        DIVS R3,R5              ;R5 = L_ROTOR*ISD_RATED/ISD_3HP
+;        MOV.W R5,@R0            ;L_ROTOR = L_ROTOR_NOR
+
+;        MOV R1,R3               ;R3 = ISD_3HP
+;        MOV R2,R4               ;R4 = ISD_RATED
+
+;############################################
+;SIGMA_L_NOR : ISD_RATED/ISD_3HP * SIGMA_L ## 
+;############################################
+
+;        MOV SIGMA_L1,R0
+;        MOV.W @R0,R5            ;R5 = SIGMA_L
+;        MULS R5,R4
+;        STS MACL,R5             ;R5 = SIGMA_L*ISD_RATED
+;        DIVS R3,R5              ;R5 = SIGMA_L*ISD_RATED/ISD_3HP
+;        MOV.W R5,@R0              ;SIGMA_L = SIGMA_L_NOR
+
+;        MOV C1000,R5
+;        MOV R1,R3               ;R3 = ISD_3HP
+;        MOV R2,R4               ;R4 = ISD_RATED
+;        MULS R5,R4
+;        STS MACL,R5             ;R5 = 1000*ISD_RATED
+;        DIVS R3,R5              ;R5 = 1000*ISD_RATED/ISD_3HP
+;        MOV IDQSCL9_,R0
+;        MOV.W R5,@R0              ;SIGMA_L = SIGMA_L_NOR
+
+;        LDS.L   @SP+,PR
+;        RTS
+;        NOP
+
+;        .ALIGN 4
+;ISD_3HP:        .DATA.L 480
+;ISD_RATED1:     .DATA.L _ISD_RATED
+;ISQ_RATED1:     .DATA.L _ISQ_RATED
+;R_STATOR1:      .DATA.L _R_STATOR
+;R_ROTOR1:       .DATA.L _R_ROTOR
+;L_STATOR1:      .DATA.L _L_STATOR
+;L_ROTOR1:       .DATA.L _L_ROTOR
+;SIGMA_L1:       .DATA.L _SIGMA_L
+;C1000:          .DATA.L 1000
+;IDQSCL9_:       .DATA.L IDQSCL9
+;CORRECT1----------------END-----------------------------
+                .INCLUDE "ADDRESS.H"
+          .END
+

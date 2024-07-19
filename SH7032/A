@@ -1,0 +1,87 @@
+;RECEIVE PORT A FOR EXTERNAL TERMINAL
+
+	    MOV	    PADR_L,R1
+;	    MOV.B   @R1,R0
+;	    AND	    #B'00000001,R0
+;	    SHLL2   R0
+;	    SHLL2   R0
+;	    SHLL    R0
+	    MOV     #0,R2
+;	    OR	    R0,R2
+	    MOV.B   @R1,R0
+	    AND     #B'00000010,R0
+	    SHLL2   R0
+	    SHLL    R0
+	    OR	    R0,R2
+	    MOV.B   @R1,R0
+	    AND     #B'00000100,R0
+	    SHLL2   R0
+	    SHLL    R0
+	    OR      R0,R2
+	    MOV.B   @R1,R0
+	    AND     #B'00001000,R0
+	    SHLR    R0
+	    OR	    R0,R2
+	    MOV	    PADR_H,R3
+	    MOV.B   @R3,R0
+	    AND	    #B'00000100,R0
+	    SHLL    R0
+	    OR	    R0,R2
+	    MOV.B   @R3,R0
+	    AND     #B'00000001,R0
+	    SHLL2   R0
+	    SHLL2   R0
+	    SHLL2   R0
+	    SHLL    R0
+	    OR      R0,R2
+	    MOV.B   @R3,R0
+	    AND     #B'00000010,R0
+	    SHLL2   R0
+	    SHLL2   R0
+	    SHLL    R0
+;	    OR	    R2,R0
+OR  R0,R2
+MOV PCLOW,R3
+MOV.B @R3,R0
+AND #B'00100000,R0
+SHLR2 R0
+SHLR2 R0
+OR R0,R2 
+MOV.B @R3,R0
+AND #B'01000000,R0
+SHLR2 R0
+SHLR2 R0
+SHLR2 R0
+OR R2,R0
+
+;	    OR	    #B'11,R0		;ESPECIALLY TODAY
+
+	    MOV	    INPORT1,R2
+	    MOV.W   R0,@R2
+	    MOV.B    @R1,R0
+	    AND     #B'00010000,R0
+	    SHLL    R0
+	    MOV     #0,R2
+	    OR	    R0,R2
+	    MOV.B   @R1,R0
+	    AND     #B'00100000,R0
+	    SHLL2   R0
+	    OR	    R0,R2
+	    MOV.B   @R1,R0
+	    AND    #B'10000000,R0
+	    SHLR2   R0
+	    SHLR    R0
+;	    OR	    R2,R0
+;	    AND    #B'10110111,R0
+OR R0,R2
+MOV.B @R3,R0
+AND #B'10000000,R0
+SHLR R0
+OR R2,R0
+AND #B'11110111,R0 
+
+;AND #B'10110111,R0		;ESPECIALLY TODAY
+
+	    MOV	    INPORT2,R2
+	    MOV.B   R0,@R2
+

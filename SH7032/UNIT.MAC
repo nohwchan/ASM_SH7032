@@ -1,0 +1,4676 @@
+;       Last update : 29/4/2539
+;       By     : Surapong Suwankawin
+;       Verify : SOPON SMAIRATH 3/12/39
+;***********************************************************************
+;Rsd:   .EQU    1557
+        .EXPORT _IMIA3,IMIA3,_IRQ2,_OVI4;,KP
+        .IMPORT DQ_3PHS,LOOP,LOOP1
+        .IMPORT DEADT_COM,SQ_ROOT,DTIME_NEW
+        .IMPORT PI_CON,ADPT_CON,TRX1WORD
+        .IMPORT SPD_CAL,PROGRAM,WG_FUNC,WM_COM_MIN
+        .IMPORT PWM_GEN                         ;USER2.OBJ
+        .IMPORT READ_AD                                ;IUV_IN.OBJ
+        .IMPORT IUV2DQ                                 ;USER2.OBJ
+	.IMPORT EE_WR,EE_RD,EE_EN
+        .INCLUDE "MACRO.H"                             ;(MUL,DIV)
+        .INCLUDE "RAM_IMP.H"
+        .SECTION SSL,CODE,ALIGN=4
+SSL:
+;***********************************************************
+; INTERRUPT SERVICE	INT ROM
+;
+; WHEN IRQ2 FALLING EDGE THEN INTERRUPT
+;***********************************************************
+_IRQ2:
+        STS.L   PR,@-SP
+        MOV     R0,@-SP
+        MOV     R1,@-SP
+        MOV     R10,@-SP
+        MOV     R12,@-SP
+        MOV     R14,@-SP
+
+        MOV SYSFLG11,R0
+        MOV.B @R0,R0
+        TST #B'1000,R0                  ;IF TRIP MODE
+        BF  OUT_OFF                     ;THEN OUT_OFF NOT OC_TRIP
+        TST #B'100,R0                   ;IF RUN MODE
+        BF  OC_T_R                      ;THEN OC_TRIP
+        MOV VSTATUS,R1
+        MOV.B @R1,R0
+        OR  #B'1,R0                     ;SET STP MODE OC FLG
+        MOV.B R0,@R1
+
+        BRA OUT_OFF
+        NOP
+
+OC_T_R:
+        MOV VSTATUS,R1                  ;CLEAR STP MODE OC FLG
+        MOV.B @R1,R0
+        AND #B'11111110,R0
+        MOV.B R0,@R1
+
+MOV TIP_TYP0_,R0
+MOV.B @R0,R0
+CMP/EQ #4,R0
+BT OUT_OFF
+CMP/EQ #1,R0                            ;IF OH TRIP
+BT OUT_OFF				;THEN NOT OC TRIP
+
+;        STC     SR,R1
+;        MOV     QQQ,R0
+;        OR      R0,R1
+;        LDC     R1,SR
+
+;               MOV PAHI_,R1
+;		MOV.B @R1,R0
+;		AND #B'01111111,R0
+;		MOV.B R0,@R1
+;               MOV CS1_,R1
+;		MOV R1,@R1
+
+                MOV PBHI_,R1
+		MOV.B @R1,R0
+		OR #B'10000000,R0
+		MOV.B R0,@R1
+
+OC_TRIP:
+                MOV TIP_TYP0_,R1
+                MOV #0,R0
+                MOV.B R0,@R1
+                MOV TRIPMODE,R14
+                JSR @R14;TRIP_MODE
+		NOP
+		
+		MOV OHCOUNT1,R1
+		MOV #0,R0
+		MOV.B R0,@R1
+OUT_OFF:
+        MOV     @SP+,R14
+        MOV     @SP+,R12
+        MOV     @SP+,R10
+        MOV     @SP+,R1
+        MOV     @SP+,R0
+        LDS.L   @SP+,PR
+        RTE
+        NOP
+        .ALIGN 4
+TRIPMODE: .DATA.L TRIP_MODE
+PAHI_:    .DATA.L H'5FFFFC0
+PBHI_:	  .DATA.L H'5FFFFC2
+CS1_:     .DATA.L H'1000000
+TIP_TYP0_:.DATA.L TIP_TYP
+OHCOUNT1: .DATA.L _OH_COUNT
+;QQQ:      .DATA.L H'00003C00
+;SYSFLG11:  .DATA.L SYSFLG
+;VSTATUS:   .DATA.L _V_STATUS
+        .ALIGN 4
+;*********************************************************************
+; GENERATE PWM AND UPDATE SETA EVERY 3kHz ;3KPWM
+; (FOR 3,6,9,12,15kHzSWITCHING)
+; BUT OTHER SWITCHING GEN.PWM AND UPDATE SETA EVERY 1ms.
+;*********************************************************************
+IMIA1:
+        STS.L   PR,@-SP
+        MOV     R0,@-SP
+        MOV     R1,@-SP
+        MOV     R2,@-SP
+        MOV     R3,@-SP
+        MOV     R4,@-SP
+        MOV     R5,@-SP
+        MOV     R6,@-SP
+        MOV     R7,@-SP
+        MOV     R8,@-SP
+        MOV     R9,@-SP
+        MOV     R10,@-SP
+        MOV     R11,@-SP
+        MOV     R12,@-SP
+        MOV     R13,@-SP                ;PUSH REGISTER THAT USE IN PWM
+        MOV     R14,@-SP                ;IN STACK
+
+        MOV     SYSFLG11,R1
+        ADD     #1,R1
+        MOV.B   @R1,R0
+        TST     #B'100,R0               ;IF V/F MODE
+        BF      VF_ANGLE                ;THEN GO TO VF_ANGLE
+        TST     #B'10,R0                ;IF VECTOR MODE
+        BT      VT_ANGLE                ;THEN GO TO VT_ANGLE
+SSL_ANGLE:                              ;ELSE SSL_ANGLE
+;SSL_BREAK-------------BEGIN------------------------------
+;        MOV     RSTATUS3,R1
+;        MOV.B   @R1,R0
+;        TST     #B'100000,R0            ;IF DC BRAKE IN
+;        BT      NO_BRK1
+;        BRA     OUT_PWM                 ;THEN OUT_PWM
+;        NOP
+;NO_BRK1:
+;SSL_BREAK-----------------END-----------------------------
+        MOV     SSLSETA,R14             ;UPDATE SETA OF SSL
+        JMP     @R14;SSL_SETA
+        NOP
+VT_ANGLE:
+        MOV     VECTORSETA,R14          ;UPDATE SETA OF VECTOR
+        JMP     @R14;VECTOR_SETA
+        NOP
+VF_ANGLE:
+        MOV     RSTATUS3,R1
+        MOV.B   @R1,R0
+        TST     #B'100000,R0            ;IF DC BRAKE IN
+        BT      NO_BRK
+        BRA     OUT_PWM                 ;THEN OUT_PWM
+        NOP
+NO_BRK:
+        MOV     VFSETA,R14              ;UPDATE SETA OF V/F
+        JMP     @R14;VF_SETA
+        NOP
+RETURN_PWM:
+
+        MOV     VSTATUS,R9
+        MOV.B   @R9,R0
+        TST     #B'10,R0                ;IF FLG NOT SET
+        BT      OLD_VALUE               ;USE OLD VALUE
+
+        AND     #B'11111101,R0          ;ELSE CLEAR FLG
+        MOV.B   R0,@R9                  ;AND USE UPDATE VALUE
+        MOV     ANGLE,R0
+        MOV     @R0,R0
+        MOV     VDCOM,R1
+        MOV     @R1,R1
+        MOV     VQCOM,R2
+        MOV     @R2,R2
+        MOV     VDC4,R3
+        MOV     @R3,R3
+        MOV     UCX2,R12
+        MOV     @R12,R12
+        MOV     UCY2,R13
+        MOV     @R13,R13
+
+        MOV     ANGLE_OLD,R5            ;STORE UPDATE VALUE TO OLD VALUE
+        MOV     R0,@R5                  ;FOR NEXT SAMPLING TIME
+        MOV     VDCOM_OLD,R6
+        MOV     R1,@R6
+        MOV     VQCOM_OLD,R7
+        MOV     R2,@R7
+        MOV     VDC_OLD,R8
+        MOV     R3,@R8
+        MOV     UCX_OLD,R9
+        MOV     R12,@R9
+        MOV     UCY_OLD,R10
+        MOV     R13,@R10
+        BRA     START_PWM
+        NOP
+
+OLD_VALUE:                              ;USE OLD VALUE EXCEPT SETA(UPDATE EVERY 1/3 ms.)
+;        MOV     ANGLE_OLD,R5
+        MOV     ANGLE,R5
+        MOV     @R5,R0
+        MOV     VDCOM_OLD,R6
+        MOV     @R6,R1
+        MOV     VQCOM_OLD,R7
+        MOV     @R7,R2
+        MOV     VDC_OLD,R8
+        MOV     @R8,R3
+        MOV     UCX_OLD,R9
+        MOV     @R9,R12
+        MOV     UCY_OLD,R10
+        MOV     @R10,R13
+
+START_PWM:
+;MOV K2489,R3
+;MOV #0,R12
+;MOV #0,R13
+        MOV     PWMGEN2,R14
+        JSR     @R14;PWM_GEN
+        NOP
+OUT_PWM:
+        MOV     @SP+,R14                ;POP REGISTER THAT USE IN PWMGWN
+        MOV     @SP+,R13
+        MOV     @SP+,R12
+        MOV     @SP+,R11
+        MOV     @SP+,R10
+        MOV     @SP+,R9
+        MOV     @SP+,R8
+        MOV     @SP+,R7
+        MOV     @SP+,R6
+        MOV     @SP+,R5
+        MOV     @SP+,R4
+        MOV     @SP+,R3
+        MOV     @SP+,R2
+        MOV     @SP+,R1
+        MOV     @SP+,R0
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+;***********************************************************
+; INTERRUPT SERVICE;3KPWM
+;
+; WHEN TCNT0 = GRA0 THEN INTERRUPT
+;***********************************************************
+_IMIA3:
+        STS.L   PR,@-SP
+        STS.L   MACL,@-SP
+        MOV     R0,@-SP
+        MOV     R1,@-SP
+        MOV     R2,@-SP
+        MOV     R3,@-SP
+        MOV     R12,@-SP
+
+        MOV     TSR_3,R1                ;RESET INTERRUPT
+        MOV.B   @R1,R12
+        MOV     #0,R12
+        MOV.B   R12,@R1
+
+;OVERMOD1-------------------BEGIN-----------------------------------
+        MOV     TBASE1,R12
+        MOV.W   @R12,R12
+        ADD     #100,R12
+
+        MOV     BRB3B1,R1
+        MOV.W   @R1,R0
+        CMP/EQ  R12,R0
+        BT      BUFFER1
+
+        MOV     BRB_3_,R1
+        MOV.W   @R1,R2
+        CMP/EQ  R12,R2
+        BT      BUFFER1
+        MOV.W   R0,@R1
+
+BUFFER1:
+        MOV     BRA4B1,R1
+        MOV.W   @R1,R0
+        CMP/EQ  R12,R0
+        BT      BUFFER2
+
+        MOV     BRA_4_,R1
+        MOV.W   @R1,R2
+        CMP/EQ  R12,R2
+        BT      BUFFER2
+        MOV.W   R0,@R1
+BUFFER2:
+        MOV     BRB4B1,R1
+        MOV.W   @R1,R0
+        CMP/EQ  R12,R0
+        BT      BUFFER3
+
+        MOV     BRB_4_,R1
+        MOV.W   @R1,R2
+        CMP/EQ  R12,R2
+        BT      BUFFER3
+        MOV.W   R0,@R1
+BUFFER3:
+;OVERMOD1--------------------END------------------------------------
+        MOV     INTCNT,R1               ;COUNT INTERUPT EVERY TIMES
+	MOV.B	@R1,R0
+        ADD     #1,R0
+	MOV.B	R0,@R1
+
+        MOV INTLOOP,R1
+        MOV.B @R1,R1
+        MOV #3,R2
+        CMP/EQ R2,R1                    ;IF INTLOOP = 3
+        BT  FACTOR3                     ;THEN GOTO FACTOR3
+        MOV #6,R2
+        CMP/EQ R2,R1                    ;IF INTLOOP = 6
+        BT  FACTOR3                     ;THEN GOTO FACTOR3
+        MOV #9,R2
+        CMP/EQ R2,R1                    ;IF INTLOOP = 9
+        BT  FACTOR3                     ;THEN GOTO FACTOR3
+        MOV #12,R2
+        CMP/EQ R2,R1                    ;IF INTLOOP = 12
+        BT  FACTOR3                     ;THEN GOTO FACTOR3
+        MOV #15,R2
+        CMP/EQ R2,R1                    ;IF INTLOOP = 15
+        BT  FACTOR3                     ;THEN GOTO = FACTOR3
+        MOV VSTATUS,R2                  ;ELSE SET 1ms.PWM SAMPLING TIME FLG.
+        MOV.B @R2,R3
+        MOV #B'100,R12
+        OR  R12,R3
+        MOV.B R3,@R2
+        CMP/EQ R1,R0                    ;IF INTCNT NOT EQ INTLOOP
+        BF  RETURN                      ;THEN RETURN (NOT GEN PWM)
+        BSR IMIA1                       ;ELSE GOTO PWMGEN
+        NOP
+        BRA RETURN                      ;OUT OF SERVICE ROUTINE
+        NOP
+
+FACTOR3:                                ;SWITCHING FREQ. IS 3,6,9,12,15 kHz.
+        MOV VSTATUS,R2                  ;SET 1/3 ms.PWM SAMPLING TIME FLG.
+        MOV.B @R2,R3
+        MOV #B'11111011,R12
+        AND R12,R3
+        MOV.B R3,@R2
+
+        MOV INTLOOP,R1
+        MOV.B @R1,R1
+        MOV #3,R2
+        DIVS R2,R1                      ;R1=INTLOOP/3
+        MOV R1,R2                       ;R2=R1
+        ADD R1,R2                       ;R2=2(INTLOOP/3)
+        MOV R1,R3                       ;R3=R1
+        ADD R2,R3                       ;R3=3(INTLOOP/3)=INTLOOP
+
+        CMP/EQ R1,R0                    ;IF INTCNT = INTLOOP/3
+        BF NOT1
+        BSR IMIA1                       ;THEN GENERATE PWM
+        NOP
+        BRA RETURN
+        NOP
+NOT1:
+        CMP/EQ R2,R0                    ;IF INTCNT = 2(INTLOOP/3)
+        BF NOT2
+        BSR IMIA1                       ;THEN GENERATE PWM
+        NOP
+        BRA RETURN
+        NOP
+NOT2:
+        CMP/EQ R3,R0                    ;IF INTCNT = 3(INTLOOP/3)
+        BF RETURN
+        BSR IMIA1                       ;THEN GENERATE PWM
+        NOP
+
+RETURN:
+        MOV     @SP+,R12
+        MOV     @SP+,R3
+        MOV     @SP+,R2
+        MOV     @SP+,R1
+        MOV     @SP+,R0
+        LDS.L   @SP+,MACL
+        LDS.L   @SP+,PR
+        RTE
+        NOP
+
+	.ALIGN 4
+INTCNT: .DATA.L INT_COUNT
+TSR_3:	.DATA.L H'5FFFF25
+TSR_0:	.DATA.L H'5FFFF07
+INTLOOP:.DATA.L INT_LOOP
+TSR_1:  .DATA.L H'5FFFF11
+ANGLE:  .DATA.L _SETA
+VDCOM:  .DATA.L _VD_COM
+VQCOM:  .DATA.L _VQ_COM
+UCX2:   .DATA.L _UCX
+UCY2:   .DATA.L _UCY
+VDC4:   .DATA.L _V_DC
+PWMGEN2:  .DATA.L PWM_GEN
+ANGLE_OLD:      .DATA.L _SETA_OLD
+VDCOM_OLD:      .DATA.L _VD_COM_OLD
+VQCOM_OLD:      .DATA.L _VQ_COM_OLD
+VDC_OLD:        .DATA.L _VDC_OLD
+UCX_OLD:        .DATA.L _UCX_OLD
+UCY_OLD:        .DATA.L _UCY_OLD
+K2489:          .DATA.L 2489
+VSTATUS:        .DATA.L _V_STATUS
+VFSETA:         .DATA.L VF_SETA
+VECTORSETA:     .DATA.L VECTOR_SETA
+SSLSETA:        .DATA.L SSL_SETA
+SYSFLG11:       .DATA.L SYSFLG
+RSTATUS3:       .DATA.L _R_STATUS
+        .ALIGN 4
+;OVERMOD1-------------------BEGIN-----------------------------------
+;***********************************************************
+; INTERRUPT SERVICE (UNDER FLOW INTERRUPT)
+;
+; WHEN TCNT4 = H'0000 THEN INTERRUPT
+;***********************************************************
+_OVI4:
+        STS.L   PR,@-SP
+        STS.L   MACL,@-SP
+        MOV     R0,@-SP
+        MOV     R1,@-SP
+        MOV     R2,@-SP
+        MOV     R12,@-SP
+
+        MOV     TSR_4,R2
+        MOV.B   @R2,R1
+        MOV     #H'F8,R0
+        MOV.B   R0,@R2                  ;RESET OVER/UNDER FLOW BIT
+
+        MOV     TBASE1,R12
+        MOV.W   @R12,R12
+        ADD     #90,R12
+
+        MOV     BRB3B1,R1
+        MOV.W   @R1,R0
+        CMP/EQ  R12,R0
+        BT      BUFFER4
+
+        MOV     BRB_3_,R1
+        MOV.W   @R1,R2
+        CMP/EQ  R12,R2
+        BT      BUFFER4
+        MOV.W   R0,@R1
+
+BUFFER4:
+        MOV     BRA4B1,R1
+        MOV.W   @R1,R0
+        CMP/EQ  R12,R0
+        BT      BUFFER5
+
+        MOV     BRA_4_,R1
+        MOV.W   @R1,R2
+        CMP/EQ  R12,R2
+        BT      BUFFER5
+        MOV.W   R0,@R1
+BUFFER5:
+        MOV     BRB4B1,R1
+        MOV.W   @R1,R0
+        CMP/EQ  R12,R0
+        BT      BUFFER6
+
+        MOV     BRB_4_,R1
+        MOV.W   @R1,R2
+        CMP/EQ  R12,R2
+        BT      BUFFER6
+        MOV.W   R0,@R1
+BUFFER6:
+
+        MOV     @SP+,R12
+        MOV     @SP+,R2
+        MOV     @SP+,R1
+        MOV     @SP+,R0
+        LDS.L   @SP+,MACL
+        LDS.L   @SP+,PR
+        RTE
+        NOP
+
+        .ALIGN 4
+TSR_4:          .DATA.L H'5FFFF35
+BRB_3_:         .DATA.L H'5FFFF2E
+BRA_4_:         .DATA.L H'5FFFF3C
+BRB_4_:         .DATA.L H'5FFFF3E
+BRB3B1:         .DATA.L BRB3B
+BRA4B1:         .DATA.L BRA4B
+BRB4B1:         .DATA.L BRB4B
+TBASE1:         .DATA.L _TBASE
+        .ALIGN 4
+;OVERMOD1--------------------END------------------------------------
+
+;***********************************************************
+; INTERRUPT SERVICE
+;
+; WHEN TCNT0 = GRA0 THEN INTERRUPT
+;***********************************************************
+IMIA3:
+        STS.L   PR,@-SP
+	.INCLUDE "GDC_SET.H"	;WRITE GAIN OF VDC IN EEPROM
+	.INCLUDE "TUNE_WR.H"	;WRITE MOTOR PARAMETER IN EEPROM
+
+	MOV	FAC_COUNT,R1
+	MOV.B	@R1,R0
+	CMP/EQ	#0,R0		;IF FAC_COUNT =0 (FOR WRITE EEPROM 1 TIMES PER LOOP)
+	BT	NOT_FAC_SET	;THEN NOT FACTORY SETTING (WRITE EEPROM)
+	MOV	PROGSET,R14	;ELSE WRITE EEPROM CORRESPOND TO FACTORY SET
+	JMP	@R14;PROGRAM
+	NOP
+;*********************************************************************
+;  READING STATOR CURRENT (IU,IV TO ID,IQ) FOR SPEED IDENTIFICATION
+;*********************************************************************		
+NOT_FAC_SET:
+
+        MOV     RD_AD,R14
+        JSR     @R14;READ_AD
+	NOP
+
+	MOV     IU_OFF,R3
+	MOV	IV_OFF,R4
+        MOV     SYSFLG1A,R6
+	MOV.B	@R6,R0
+	TST	#B'100,R0
+	BF      RUN_MD
+	MOV     R1,@R3
+        MOV     R2,@R4
+RUN_MD:
+	MOV	@R3,R3
+	SUB	R3,R1
+	MOV	IU1,R0
+	MOV	R1,@R0
+
+	MOV	@R4,R4
+	SUB	R4,R2
+	MOV	IV1,R0
+	MOV	R2,@R0		        ;KEEP IU,IV
+
+        MOV     VDC,R0
+        MOV     R5,@R0
+
+	MOV	READVDC,R14
+	JSR	@R14;READ_VDC
+	NOP
+
+;*************************************************************************
+;	        	SPEED CALCULATION (FROM ENCODER)
+;*************************************************************************
+	MOV	SPDCAL,R13
+	JSR	@R13;SPD_CAL
+	NOP
+
+        MOV     WM1A,R0
+	MOV	R10,@R0				;KEEP SPEED
+
+	MOV	RPOS1,R0
+	MOV	R2,@R0				;KEEP ROTOR POSITION	
+
+	MOV	USTATUS1,R0
+	MOV.B	@R0,R0
+	TST	#B'10,R0		;IF FREE RUN IN
+	BF	CLEAR			;THEN CLEAR FIRST ORDER DELAY
+
+        MOV     SYSFLG1A,R0
+	MOV.B	@R0,R0	
+	TST	#B'100,R0
+        BT      NO_RUN_M
+        BRA     RUN_M
+        NOP
+NO_RUN_M:
+;**********CLEAR FIRST ORDER DELAY TO 0 BEFORE RUN
+CLEAR:
+	MOV	#0,R0
+        MOV     IQCOM_,R1
+	MOV	R0,@R1
+	MOV	IQCOM0,R1
+	MOV	R0,@R1
+	MOV	IQREAL,R1
+	MOV	R0,@R1
+	MOV	IQEST,R1
+	MOV	R0,@R1
+	MOV	IQ0WS,R1
+	MOV	R0,@R1
+	MOV	IQ0,R1
+	MOV	R0,@R1
+	MOV	IQERR,R1
+	MOV	R0,@R1
+
+        MOV     TORQUECOM_,R1
+	MOV	R0,@R1
+        MOV     TORQUECOM0,R1
+	MOV	R0,@R1
+        MOV     TORQUE0WS,R1
+	MOV	R0,@R1
+        MOV     TORQUE0,R1
+        MOV     R0,@R1
+
+        MOV     ID0,R1
+	MOV	R0,@R1
+	MOV	IDREAL,R1
+	MOV	R0,@R1
+	MOV	IDEST,R1
+	MOV	R0,@R1
+	MOV	IDRE0,R1
+	MOV	R0,@R1
+	MOV	IDERR,R1
+	MOV	R0,@R1
+	MOV	ID0WS,R1
+	MOV	R0,@R1
+
+	MOV	IMR0,R1
+	MOV	R0,@R1
+	MOV	IMREST,R1
+	MOV	R0,@R1
+	MOV	IMR0WS,R1
+	MOV	R0,@R1
+
+        MOV     SETA1,R1
+        MOV     R0,@R1
+        MOV     SETA0,R1
+        MOV     R0,@R1
+	
+	MOV	AREA_PI,R1
+	MOV	R0,@R1
+
+        MOV     AREA_API,R1
+        MOV     R0,@R1
+
+        MOV     WSL_,R1
+        MOV     R0,@R1
+        MOV     WSL0_,R1
+        MOV     R0,@R1
+        MOV     WM1A,R1
+	MOV	R0,@R1
+
+        MOV     WM_EST1A,R1
+        MOV     R0,@R1
+
+        MOV     WO5,R1
+        MOV     R0,@R1
+
+        MOV     PV,R1
+	MOV	R0,@R1
+	
+	MOV	IRMS1,R1	;CLEAR IRMS WHEN IS IN TRIP MODE
+	MOV	R0,@R1		;IN ORDER TO JUMP TO COOLING(IRMS<IMOTOR_DERATE)
+
+        MOV     AMP4,R1
+        MOV     R0,@R1
+
+        MOV     NO_OP1,R1
+        MOV.W   R0,@R1
+;CLEAR OLD VALUE OF PWM "FLYINGC"
+        MOV     ANGLE_OLD1,R1
+        MOV     R0,@R1
+        MOV     VDCOM_OLD1,R1
+        MOV     R0,@R1
+        MOV     VQCOM_OLD1,R1
+        MOV     R0,@R1
+        MOV     VDC_OLD1,R1
+        MOV     R0,@R1
+        MOV     UCX_OLD1,R1
+        MOV     R0,@R1
+        MOV     UCY_OLD1,R1
+        MOV     R0,@R1
+;CLEAR OLD VALUE OF PWM "FLYINGC"
+
+;*******CLEAR PWM 
+	MOV	TBASE,R0
+	MOV.W	@R0,R0
+	SHAR	R0
+;OVERMOD1----------------BEGIN--------------------
+;        MOV     BRB_3,R1
+;        MOV.W   R0,@R1
+;        MOV     BRA_4,R1
+;        MOV.W   R0,@R1
+;        MOV     BRB_4,R1
+;        MOV.W   R0,@R1
+
+        MOV BRB3B2,R1
+        MOV.W R0,@R1
+        MOV BRA4B2,R1
+        MOV.W R0,@R1
+        MOV BRB4B2,R1
+        MOV.W R0,@R1
+;OVERMOD1---------------END----------------------
+        MOV     SYSFLG1A,R0
+	MOV.B	@R0,R0	
+	TST	#B'100,R0
+	BF	RUN_M
+        MOV     MONITOR_,R14
+        JMP     @R14;MONITOR
+        NOP
+
+        .ALIGN 4
+FAC_COUNT: .DATA.L _FAC_COUNT
+PROGSET:   .DATA.L PROGRAM
+SPDCAL:    .DATA.L SPD_CAL
+RPOS1:     .DATA.L _RPOS
+USTATUS1:  .DATA.L _U_STATUS
+MONITOR_:  .DATA.L MONITOR
+RD_AD:     .DATA.L READ_AD
+IOFFST:    .DATA.L 512
+IU_OFF:    .DATA.L _IU_OFF
+IV_OFF:    .DATA.L _IV_OFF
+IU1:       .DATA.L _IU
+IV1:       .DATA.L _IV
+VDC:       .DATA.L _V_DC
+READVDC:   .DATA.L READ_VDC
+WM1A:      .DATA.L _WM
+SYSFLG1A:  .DATA.L SYSFLG
+AREA_PI:   .DATA.L _VAR1
+AREA_API:  .DATA.L _VAR
+IQCOM_:    .DATA.L _IQ_COM
+IQCOM0:    .DATA.L _IQ_COM0
+IQREAL:    .DATA.L _IQ_REAL
+IQ0WS:     .DATA.L _IQ_0WS
+IQ0:       .DATA.L _IQ_0
+IQEST:     .DATA.L _IQ_EST
+IQERR:     .DATA.L _IQ_ERR
+TORQUECOM_:     .DATA.L _TORQUE_COM
+TORQUECOM0:     .DATA.L _TORQUE_COM0
+TORQUE0WS:      .DATA.L _TORQUE_0WS
+TORQUE0:        .DATA.L _TORQUE_0
+ID0:    .DATA.L _ID_0
+ID0WS:	.DATA.L _ID_0WS
+IDEST:	.DATA.L _ID_EST
+IDERR:	.DATA.L _ID_ERR
+IDREAL:	.DATA.L _ID_REAL
+IDRE0:  .DATA.L _ID_RE0
+IMREST: .DATA.L _IMR_EST
+IMR0:	.DATA.L _IMR_0
+IMR0WS:	.DATA.L _IMR_0WS
+IRMS1:	.DATA.L I_RMS
+SETA1:  .DATA.L _SETA
+SETA0:  .DATA.L _SETA_0
+WO5:    .DATA.L _WO
+WSL_:   .DATA.L _WSL
+WSL0_:  .DATA.L _WSL_0
+PV:     .DATA.L P_V
+WM_EST1A: .DATA.L _WM_EST
+AMP4:     .DATA.L AMPERE
+BRB_3:  .DATA.L H'5FFFF2E
+BRA_4:	.DATA.L H'5FFFF3C
+BRB_4:	.DATA.L H'5FFFF3E
+BRB3B2: .DATA.L BRB3B
+BRA4B2: .DATA.L BRA4B
+BRB4B2: .DATA.L BRB4B
+TBASE:  .DATA.L _TBASE
+NO_OP1: .DATA.L _NO_OP
+ANGLE_OLD1:      .DATA.L _SETA_OLD
+VDCOM_OLD1:      .DATA.L _VD_COM_OLD
+VQCOM_OLD1:      .DATA.L _VQ_COM_OLD
+VDC_OLD1:        .DATA.L _VDC_OLD
+UCX_OLD1:        .DATA.L _UCX_OLD
+UCY_OLD1:        .DATA.L _UCY_OLD
+
+        .ALIGN 4
+
+RUN_M:
+;************************************************************************
+;			ASSIGN SPEED COMMAND
+;************************************************************************
+SPD_COM:
+;************************************************************
+; 			FLYING START
+
+BRA NOT_1ST_RUN
+NOP
+
+MOV PSTATUS,R1
+MOV.B @R1,R0
+TST #B'10000,R0
+BT NOT_1ST_RUN
+;MOV FSET1,R1
+;MOV.W @R1,R0
+;CMP/EQ #0,R0
+;BT NOT_1ST_RUN
+
+MOV TWO10,R1
+MULS R1,R10
+STS MACL,R1
+MOV F2WM64,R0
+DIVS R0,R1
+MOV FRUN1,R0
+MOV.W R1,@R0
+
+NOT_1ST_RUN:
+;************************************************************
+;        .INCLUDE "SLIP.H"
+
+        MOV     FRUN1,R1
+	MOV.W	@R1,R1
+
+;        MOV DELFREQ,R2
+;        MOV.W @R2,R2
+;        ADD R2,R1
+;SOFT1-----------------BEGIN--------------------------------
+        MOV FLUX_COUNT,R4
+        MOV.B @R4,R2
+        MOV #100,R0
+        CMP/GE R0,R2
+        BT  FULL_FLUX
+        ADD #1,R2
+        MOV.B R2,@R4
+FULL_FLUX:
+;SOFT1-----------------END----------------------------------
+
+;       MOV     #50,R0
+;	CMP/GE  R0,R1
+;	BT	FR2WM
+;        MOV     TBASE,R0
+;        MOV.W   @R0,R0
+;	MOV	BRB_3,R11
+;	MOV	BRA_4,R12
+;	MOV	BRB_4,R13
+;        MOV.W   R0,@R11
+;        MOV.W   R0,@R12
+;        MOV.W   R0,@R13
+;	BRA	MONITOR
+;	NOP
+FR2WM:
+        MOV     F2WM64,R2
+        MULS    R1,R2
+        STS     MACL,R4
+	MOV	TWO10,R2	
+        DIVSN   R2,R4                   ;FIELD WEAK
+
+        MOV     POLE1,R2
+        MOV.B   @R2,R2
+        SHAR    R2
+        DIVSN   R2,R4                   ;FIELD WEAK
+        MOV     R4,R1
+
+        MOV     SYSFLG1,R0
+	MOV.B	@R0,R0
+	TST	#B'10000,R0
+	BT	FWD
+	NEG	R1,R1
+
+FWD:
+       MOV     WM_COM,R2
+       MOV     R1,@R2
+
+
+;**************************************************************************
+;			   SPEED LOOP CONTROL
+;o/p=e1*Kp+(e1+initial area')*Ki*dT
+;Kp=2.5 => 2.5*2^6 = 160
+;KI = ki*2^6*DT = 0.17*2^6/2000 = 1/184, Ti=1/KI=184 ,Fs=2KHz
+;***************************************************************************
+	MOV	SYSFLG1,R0
+	ADD	#1,R0
+	MOV.B	@R0,R0
+	TST	#B'10,R0
+	BF	USE_WEST
+
+	MOV	WM1,R0
+	MOV	@R0,R8
+
+	BRA	SUB_WCOM
+	NOP
+
+USE_WEST:
+	MOV	WM_EST1,R0
+	MOV	@R0,R8				;POP OUT ESTIMATED SPEED
+
+SUB_WCOM:
+	SUB	R8,R1				;R1=SPEED ERROR
+;       BRA     TEST_IQCOM                      ;!!! TEST
+;       NOP
+
+        MOV     R8,R9
+	SHAL    R9
+	BF	POS_WM
+	SHAR    R9
+	NEG     R9,R9
+POS_WM:
+	MOV	SYSFLG1,R4
+	ADD	#1,R4
+	MOV.B	@R4,R0
+	MOV     HZ5,R5
+
+	TST	#1,R0				;IF SYSFLG.8=0 USE LOW GAIN 
+	BT	CHK_HI				;BEFORE JMP CHK_HI 
+	ADD	#-100,R5			;ELSE IT HI , CHK 4.5 Hz
+	CMP/GT  R5,R9				;IF WM>4.5 Hz 
+	BT	LOW_G				;CHANGE TO LOW GAIN
+	BRA	HI_G				;ELSE USE OLD(HI G)
+	NOP
+
+CHK_HI:	CMP/GT  R5,R9				;IF WM<5 Hz CHANGE TO HIGH GAIN
+	BF	HI_G
+
+LOW_G:
+	AND	#B'11111110,R0
+	MOV.B	R0,@R4
+	MOV	KP_L,R2				;R2=KP
+	MOV.W	@R2,R2
+	MOV	Ti_L,R3				;R3=KI
+        MOV.W   @R3,R3
+	BRA	PI_SUB
+	NOP
+
+HI_G:	
+	OR	#1,R0
+	MOV.B	R0,@R4
+MOV #100,R2
+MOV IQCOM,R0
+MOV @R0,R0
+DIVS R2,R0
+MOV R0,R3
+SHAL R3
+BF NO_NEGR0
+NEG R0,R0
+NO_NEGR0:
+SHAL R0
+SHAL R0
+MOV R0,R3
+MOV KP_TAB,R0
+MOV @(R0,R3),R2
+MOV KI_TAB,R0
+MOV @(R0,R3),R3
+       MOV     KP_H1,R2                        ;R2=KP
+       MOV     Ti_H1,R3                        ;R3=KI
+;        MOV     KPHI,R2
+;        MOV.W   @R2,R2
+;        MOV     TIHI,R3
+;        MOV.W   @R3,R3
+;        MOV     KP_L,R2                         ;R2=KP
+;        MOV.W   @R2,R2
+;        SHAL    R2
+;        SHAL    R2
+;        SHAL    R2
+;        SHAL    R2
+;        SHAL    R2
+;        SHAL    R2
+;        MOV     Ti_L,R3                         ;R3=KI
+;        MOV.W   @R3,R3
+;        SHAR    R3
+;        SHAR    R3
+;        SHAR    R3
+;        SHAR    R3
+;        SHAR    R3
+PI_SUB:
+       MOV     KP_L,R2                         ;R2=KP
+       MOV.W   @R2,R2
+       MOV     Ti_L,R3                         ;R3=KI
+       MOV.W   @R3,R3
+;SSL_FLY----------BEGIN-------------------------------
+        MOV     VSTATUS4_,R0
+        MOV.B   @R0,R0
+        TST     #B'100000,R0
+        BF      ZERO_ERR
+        TST     #B'1000000,R0
+        BT      NOT_FIND
+ZERO_ERR:
+        MOV     #0,R1
+NOT_FIND:
+;SSL_FLY-----------END--------------------------------
+;SOFT1---------------BEGIN----------------------------
+        MOV     FLUX_COUNT,R10
+        MOV.B   @R10,R10
+        MOV     #100,R0
+        CMP/GE  R0,R10
+        BT      FULL_FLUX1
+        MOV     #0,R1
+FULL_FLUX1:
+;SOFT1----------------END-----------------------------
+
+        MOV     PICON,R10
+        JSR     @R10
+	NOP
+;SSL_BREAK-----------BEGIN----------------------------
+        MOV     SYSTEM_F,R6
+        ADD     #1,R6
+        MOV.B   @R6,R0
+        TST     #B'10,R0
+        BT      NOT_DCBREAK
+        MOV     RSTATUS_11,R6
+        MOV.B   @R6,R0
+        TST     #B'100000,R0
+        BT      NOT_DCBREAK
+        MOV     #0,R1
+NOT_DCBREAK:
+;SSL_BREAK------------END-----------------------------
+
+;TEST_IQCOM:
+;      SHAR    R1
+;BRA VT_MODE
+;NOP
+;FLYING---------BEGIN--------------------------------
+;CORRECT1------------BEGIN---------------------------
+;        MOV     WSTATUS,R0
+;        MOV.B   @R0,R0
+;        TST     #B'100,R0       ;IF USE PURE SSL SEARCH
+;        BT      VT_MODE         ;THEN GO TO VT_MODE(NOT WEIGHT)
+
+;        MOV     VSTATUS4_,R0
+;        MOV.B   @R0,R0
+;        TST     #B'100000,R0    ;IF SEARCHING FLG. SET
+;        BF      MIX_MODE        ;THEN MIX_MODE
+;        TST     #B'1000000,R0   ;ELSE IF WEIGHTED VOLT FLG. SET
+;        BF      MIX_MODE        ;THEN MIX_MODE
+;        TST     #B'10000000,R0  ;IF TRANSFER TO SSL FLG. NOT SET
+;        BT      VT_MODE         ;THEN VT_MODE(NOT MIX_MODE)
+;****************************
+;IQ_COM WEIGHTING PROCESS
+;*****************************
+;MIX_MODE:
+
+;        MOV     SYSFLG1,R0      ;CHECKING THE OPERATION MODE,
+;        ADD     #1,R0           ;IF THE SOFTWARE IS IN VETOR CONTROL MODE,
+;        MOV.B   @R0,R0          ;NONE OF PARAMETERS BE WEIGHTED, ELSE
+;        TST     #B'10,R0        ;GO TO WEIGHT THE IQ_COM
+;        BT      VT_MODE
+	
+;        MOV     R1,R2           ;R2 = IQ_COM !! PARAMETER TO BE WEIGHTED
+
+;        MOV     CLOCK,R0
+;        MOV     @R0,R1          ;R1 = WM_COM
+
+;        MOV     WGFUNC1,R10
+;        JSR     @R10;WG_FUNC1
+;        NOP
+
+;        MOV     R2,R1           ;R1 = WEIGHTED IQ_COM
+;CORRECT1------------------END-----------------------------------------
+;*********************************
+; END OF IQ_COM WEIGHTING PROCESS
+;*********************************
+;FLYING------------END--------------------------------------
+VT_MODE:
+
+;        MOV     IQCOM,R0
+;        MOV     R1,@R0                          ;KEEP IQ_COM
+
+        MOV     TORQUECOM,R0
+        MOV     R1,@R0                          ;KEEP IQ_COM
+
+        BRA     NEXT
+	NOP
+
+	.ALIGN 4
+WM_EST1: .DATA.L _WM_EST
+SCAL18:	.DATA.L 1024
+WM1:    .DATA.L _WM
+WM_COM:	.DATA.L SET_WM
+WM_OFF: .DATA.L 6702
+KP_H1:  .DATA.L 800;600;150             ;(5*2^6=Kp*2^6)
+Ti_H1:  .DATA.L 7;9              ;1/(2*64*1e-3)*100=1/(Ki*2^6*DT)= 3125/KI
+KP_L:	.DATA.L KPV;32		;(0.2*2^6=Kp*2^6)
+Ti_L:	.DATA.L TIV;200      	;1/(2*64*1e-3)*100=1/(Ki*2^6*DT)= 3125/KI
+IOADR1:
+        .DATA.L H'93FF000       ;BOARD I/O ADDRESS
+PICON:  .DATA.L PI_CON
+FSET1:  .DATA.L FSET
+FRUN1:	.DATA.L FRUN
+FSET21: .DATA.L FSET2
+F2WM64: .DATA.L 4118;2059            ;2^10*157.08*2^6/5000
+SYSFLG1:.DATA.L SYSFLG
+TWO10:  .DATA.L 1024
+HZ5:	.DATA.L 1005
+IQ_NL:	.DATA.L 64*2		;64 IN CPU=1A (MUL 2 BECAUSE CMP WITH IQ_COMM*2)
+KP_SPD: .DATA.L KP_SP
+KI_TAB: .DATA.L KITAB
+KP_TAB: .DATA.L KPTAB
+PADRHI: .DATA.L H'5FFFFC0
+KITAB:  .DATA.L 20,20,20,20,20,30,30,30,30,30,40,40,40,40,40
+KPTAB:  .DATA.L 20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170
+;KPHI:   .DATA.L _KPHI
+;TIHI:   .DATA.L _TIHI
+DELFREQ: .DATA.L _DEL_FREQ
+FLUX_COUNT: .DATA.L _FLUX_COUNT
+;************************
+; FIRST ORDER CURREN
+;************************
+IQCOM:	.DATA.L _IQ_COM
+TORQUECOM:      .DATA.L _TORQUE_COM
+SP_1:	.DATA.L S_P
+SET_POS:.DATA.L 102*40;0
+PSTATUS:.DATA.L _P_STATUS
+;WGFUNC: .DATA.L WG_FUNC
+POLE1:  .DATA.L _POLE
+;WGFUNC1:   .DATA.L WG_FUNC1
+;CLOCK:     .DATA.L _CLOCK
+;WSTATUS:   .DATA.L _W_STATUS
+VSTATUS4_: .DATA.L _V_STATUS
+SYSTEM_F:  .DATA.L SYSFLG
+RSTATUS_11:.DATA.L _R_STATUS
+        .ALIGN 4
+;***********************************************************
+;	VOLTGAGE SOURCE TYPE INDIRECT VECTOR CONTROL
+;		 (FULL ORDER OBSERVER)
+;***********************************************************
+;***********************************************************
+;        FIRST ORDER DELAY  1/(TIMELAG*S+1)
+;       TORQUE_ESTIMATED = TORQUE_0+[TORQUE_COM0-TORQUE_0]*(1/TIMEDELAY*Ts)
+;	      FORWARD DIFFERENCE METHOD
+;                 Ts = SAMPLING TIME
+;RESERVE REGISTER:
+;                 R1 = TORQUE_COMMAND IN THIS SAMPLING TIME
+;
+;***********************************************************
+NEXT:
+        MOV     TORQUE_0,R6
+        MOV     @R6,R2                  ;R2=TORQUE_0.
+
+        MOV     TORQUE_COM0,R7
+        MOV     @R7,R3                  ;R3=TORQUE_COM0
+
+        SUB     R2,R3                   ;R3=TORQUE_COM0-TORQUE_0
+
+        MOV     TIME_LAG,R4              ;R4=1/(Ts*DELAY TIME(mS))
+        MOV.W   @R4,R4
+
+        MOV     #0,R0
+        CMP/EQ  R0,R4
+        BT      NOT_FILT
+
+        MULS    R3,R4
+        STS     MACL,R3                 ;R3=[TORQUE_COM0-TORQUE_0]**Ts
+
+        MOV     TORQUE_0WS,R0
+	MOV	@R0,R2
+        ADD     R2,R3                   ;R3=TORQUE_ESTIMATED*1000
+
+;----------LIMIT OUTPUT FROM 1ST ORDER DELAY MUST NOT OVER INPUT----------
+            MOV    TORQUE_COM2,R8
+            MOV    @R8,R8
+            MOV    V1000,R9
+            MULS   R8,R9
+            STS    MACL,R8
+            NEG    R8,R9
+
+            CMP/GT R8,R3
+            BF     LOWCH
+            MOV    R8,R3
+            BRA    NO_SAT
+            NOP
+
+LOWCH:      CMP/GT R9,R3
+            BT     NO_SAT
+            NEG    R9,R9
+            MOV    R9,R3
+NO_SAT:
+;---------------------------------------------------------------------------
+        MOV     R3,@R0                  ;UPDATE TORQUE_0WS
+
+        MOV     V1000,R5
+        DIVS    R5,R3                   ;SCALE DOWN THE VALUE OF TORQUE /1000
+
+        MOV      TORQUE_0,R6
+        MOV     R3,@R6                  ;UPDATE THE TORQUE_0 FOR NEXT SAMPLING TIME
+
+        MOV     TORQUE_COM2,R0
+	MOV	@R0,R1
+        MOV     R1,@R7                  ;UPDATE THE TORQUE_COM0 FOR NEXT SAMPLING
+					;TIME.
+        MOV     IQ_COM3,R0
+        MOV     R3,@R0                  ;KEEP TORQUE_EST=IQ_COM
+
+        BRA     NEXT1
+        NOP
+
+NOT_FILT:
+
+        MOV     TORQUE_COM2,R0
+        MOV     @R0,R1                          ;KEEP IQ_COM
+        MOV     IQ_COM3,R0
+        MOV     R1,@R0                          ;KEEP IQ_COM
+        BRA     NEXT1
+        NOP
+
+        .ALIGN 4
+TORQUE_0:       .DATA.L _TORQUE_0
+TORQUE_COM0:    .DATA.L _TORQUE_COM0
+TIME_LAG:       .DATA.L _TIME_LAG;(250=4mS.)
+TORQUE_0WS:     .DATA.L _TORQUE_0WS
+V1000:          .DATA.L 1000
+TORQUE_COM2:    .DATA.L _TORQUE_COM
+IQ_COM3:        .DATA.L _IQ_COM
+        .ALIGN 4
+
+;***********************************************************
+; 	 FIRST ORDER DELAY  1/(pLs/Rs*S+1)
+;	IQ_ESTIMATED = IQ_0+[IQ_COM0-IQ_0]*Rs/pLs*Ts
+;	      FORWARD DIFFERENCE METHOD
+;
+;RESERVE REGISTER:
+;		  R1 = IQ_COMMAND IN THIS SAMPLING TIME
+;
+;***********************************************************
+NEXT1:
+	MOV	IQ_0,R6
+	MOV	@R6,R2			;R2=IQ_0.
+
+	MOV	IQ_COM0,R7
+	MOV	@R7,R3			;R3=IQ_COM0
+
+	SUB	R2,R3			;R3=IQ_COM0-IQ_0
+
+	MOV	TDELAY1,R4		;R4=Rs/pLs*Ts
+	MOV.W	@R4,R4
+	MULS	R3,R4	
+	STS	MACL,R3			;R3=[IQ_COM0-IQ_0]*Rs/pLs*Ts
+
+	MOV	IQ_0WS,R0
+	MOV	@R0,R2
+	ADD	R2,R3			;R3=IQ_ESTIMATED*1000
+
+	MOV	R3,@R0			;UPDATE IQ_0WS
+
+	MOV	IDQSCL_,R5
+	DIVS	R5,R3			;SCALE DOWN THE VALUE OF IQ /1000
+
+	MOV	IQ_0,R6
+	MOV	@R6,R10
+	MOV	IQ_K_1,R0
+	MOV	@R0,R11
+	MOV	IQ_K_2,R12
+	MOV	R11,@R12		;UPDATE IQ_K_2
+	MOV	R10,@R0			;UPDATE IQ_K_1
+
+	MOV	R3,@R6			;UPDATE THE IQ_0 FOR NEXT SAMPLING TIME
+
+	MOV	IQ_COM2,R0
+	MOV	@R0,R1
+	MOV     R1,@R7			;UPDATE THE IQ_COM0 FOR NEXT SAMPLING 
+					;TIME.
+	MOV	IQ_EST1,R0
+	MOV	R3,@R0			;KEEP IQ_EST
+
+;********************************************************
+;ID CALCULATION FOR FIELD WEAKENNING
+;********************************************************
+        MOV     FMAX5,R2
+        MOV.W   @R2,R2
+        MOV     ID_COM0,R6
+        MOV     @R6,R6
+        MULS    R2,R6
+        STS     MACL,R6
+        MOV     FRUN3,R2
+        MOV.W   @R2,R2
+        DIVS    R2,R6
+        MOV     R6,R2
+        SHAL    R2
+        BF      ID_POS
+        NEG     R6,R6
+ID_POS:
+        MOV     ID_REDUCE,R2
+        MOV     R6,@R2
+;***********************************************************
+;	             FIRST ORDER DELAY
+;	ID_ESTIMATED = ID_0+[ID_COM0-ID_0]*Rs/pLs*Ts.
+;		  FORWARD DIFFERENCE METHOD
+;
+;RESERVE REGISTER:   R1 = IQ_COM
+;		     R3 = IQ_ESTIMATED
+;                    R4 = Rs/pLs*Ts = TDELAY1
+;	 ID_COM = 5.2*2^6 
+;***********************************************************		    	
+        MOV     ID_0,R6
+        MOV     @R6,R2                  ;R2 = ID_0
+
+        MOV     FRUN3,R0
+        MOV.W   @R0,R0
+        MOV     FMAX5,R8
+        MOV.W   @R8,R8
+        CMP/GT  R8,R0
+        BT      FIELD_WEAK
+
+        MOV     ID_COM0,R7               ;R7 = ID_COM0 = 5.2*2^6
+        MOV     @R7,R7
+        BRA     NOT_WEAK
+        NOP
+
+FIELD_WEAK:
+        MOV     ID_REDUCE,R7
+        MOV     @R7,R7
+NOT_WEAK:
+;SOFT1-------------------BEGIN-------------------------------
+        MOV     FLUX_COUNT1,R0
+        MOV.B   @R0,R0
+        MULS    R0,R7
+        STS     MACL,R7
+        MOV     #100,R0
+        DIVS    R0,R7
+;SOFT1--------------------END--------------------------------
+;SSL_FLY-----------------BEGIN-------------------------------
+        MOV     VSTATUS7,R0
+        MOV.B   @R0,R0
+        TST     #B'100000,R0
+        BT      NOT_FIND1
+        MOV     #5,R4
+        DIVS    R4,R7
+        BRA     NOT_INC_FLUX
+        NOP
+NOT_FIND1:
+        TST     #B'1000000,R0
+        BT      NOT_INC_FLUX
+        MOV     INC_TIME,R8
+        MOV.W   @R8,R0
+        MULS    R0,R7
+        STS     MACL,R7
+        MOV     P10000,R10
+        DIVS    R10,R7
+NOT_INC_FLUX:
+;SSL_FLY-------------------END-------------------------------
+;SSL_BREAK--------------BEGIN---------------------------
+                MOV     R7,R8
+                MOV     SYSFLG9A,R0
+                ADD     #1,R0
+                MOV.B   @R0,R0
+                TST     #B'10,R0
+                BT      NOT_SSL_BREAK1
+                MOV     RSTATUS_1,R0
+                MOV.B   @R0,R0
+                TST     #B'100000,R0
+                BT      NOT_SSL_BREAK1
+                TST     #B'10000,R0
+                BT      STOP_BREAK
+                MOV     SSL_DUTYS,R0
+                MOV.B   @R0,R0
+                MULS    R8,R0
+                STS     MACL,R8
+                SHAR    R8
+                MOV     R8,R7
+                BRA     NOT_SSL_BREAK1
+                NOP
+STOP_BREAK:
+                MOV     SSL_DUTYE,R0
+                MOV.B   @R0,R0
+                MULS    R8,R0
+                STS     MACL,R8
+                SHAR    R8
+                MOV     R8,R7
+NOT_SSL_BREAK1:
+
+;SSL_BREAK--------------END-----------------------------
+
+;ID_LOOP---------------BEGIN----------------------------
+;        MOV     R7,R8
+;        MOV     ID_REAL4,R0
+;        MOV     @R0,R0
+;        SUB     R0,R8
+;        MOV     FLUX_KP,R0
+;        MOV.W   @R0,R0
+;        MULS    R0,R8
+;        STS     MACL,R8
+;        MOV     K400,R0
+;        DIVS    R0,R8
+;        MOV     ERR_FLUX,R0
+;        MOV     R8,@R0
+;ID_LOOP----------------END-----------------------------
+        MOV     R7,R8
+        SUB     R2,R7                   ;R7 = ID_COM0-ID_0
+        MOV     TDELAY1,R4
+	MOV.W	@R4,R4
+        MULS    R4,R7
+        STS     MACL,R7                 ;R7 = [ID_COM0-ID_0]*Rs/pLs*Ts
+
+	MOV	ID_0WS,R0
+	MOV	@R0,R2
+        ADD     R2,R7			;R7 = ID_0WS+[ID_COM0-ID_0]*Rs/pLs*Ts
+
+	MOV	R7,@R0			;UPDATE ID_0WS
+
+	MOV	IDQSCL_,R5
+	DIVS	R5,R7			;SCALE DOWN ID BY /1000
+
+        MOV     R7,R2                   ;R2 = ID_ESTIMATED
+
+	MOV	@R6,R5			;R5 = ID_0, KEEP ID_0 FOR NEXT SECTION
+
+	MOV     R7,@R6                  ;UPDATE THE ID_0 FOR NEXT SAMPLING TIME
+	MOV	R8,R4			;R4=R8=ID_COM
+
+	MOV	ID_EST1,R0
+        MOV     R2,@R0                  ;KEEP ID_EST
+;ID_LOOP---------------BEGIN----------------------------
+        MOV     R2,R8
+        MOV     ID_REAL4,R0
+        MOV     @R0,R0
+        SUB     R0,R8
+        MOV     FLUX_KP,R0
+        MOV.W   @R0,R0
+        MULS    R0,R8
+        STS     MACL,R8
+        MOV     K400,R0
+        DIVS    R0,R8
+        MOV     ERR_FLUX,R0
+        MOV     R8,@R0
+;ID_LOOP----------------END-----------------------------
+;***********************************************************************
+;		FIRST ORDER DELAY ROTOR FLUX MAGNETUDE  
+;	     IMR_ESTIMATED = IMR_0+[IMR_COM0-IMR_0]*Rr/Lr*Ts
+; 			   = {IMR_0WS+[IMR_COM0-IMR_0]*(Rr/Lr*Ts*1000)}/1000	
+;           IMR_COM0 = ID_0-H'2*Lr/(M*Rr)*[ID_0-ID_RE0] 
+;
+;			!!!!!!!!!! IMR_0WS=IMR_0*1000 !!!!!!!!!!
+;
+;RESERVE REGISTER:
+;		  R1 = IQ_COM
+;		  R2 = ID_ESTIMATED
+;		  R3 = IQ_ESTIMATED
+;		  R4 = ID_COM
+;		  R5 = ID_0
+;*************************************************************************
+ 	MOV	IMR_0,R6
+	MOV	@R6,R7			;R7=IMR_0	
+
+;	MOV	ID_RE0,R8               
+;	MOV	@R8,R9			;R9=ID_RE0 
+;	MOV	R5,R14			;R14=ID_0 
+;	SUB	R9,R14			;R14=ID_ERR0=ID_0-ID_RE0
+
+;	MOV	GAIN2,R13		;R13=H'2*Lr/(M*Rr)*1000
+;	MULS	R14,R13
+;	STS	MACL,R13		;R13=H'2*Lr/(M*Rr)*[ID_0-ID_RE0]*1000
+
+;	MOV	IDQSCL_,R12
+;	DIVS	R12,R13			;SCALE DOWN BY /1000
+
+;	SUB	R13,R5			;R5=IMR_COM0
+
+	MOV	IMR_MINP,R12
+	CMP/GE	R12,R5
+	BT	IMRCAL			;TEMPORARY CHECKING THE VALUE OF IMR_EST
+	MOV	R12,R5			;BEFORE FILTERING =128,ESPECIALLY FOR 
+					;VECTOR CONTROL
+IMRCAL:
+	SUB	R7,R5			;R5=IMR_COM0-IMR_0
+
+	MOV	TDELAY2,R10		;R10=Rr/Lr*Ts
+	MOV.W	@R10,R10
+	MULS	R10,R5
+	STS	MACL,R11		;R11=[IMR_COM0-IMR_0]*Rr/Lr*Ts
+
+	MOV	IMR_0WS,R0
+	MOV	@R0,R7
+	ADD	R11,R7			;R7=IMR_ESTIMATED
+
+	MOV	R7,@R0			;UPDATE IMR_0WS
+
+	MOV	IDQSCL_,R12
+	DIVS	R12,R7			;SCALE DOWN BY /1000
+
+	MOV	IMR_MINP,R11		;R11= 128 (ID=2A)
+	MOV	IMR_MAXN,R12		;R12= -128 (ID=-2A)
+
+	MOV	R7,R8			;R8=R7=IMR_ESTIMATED
+	SHAL	R8			;CHECKING IMR_ESTIMATED POSITIVE OR
+	BT	NEG_IMR			;NEGATIVE.
+
+	CMP/GE	R11,R7			;CHECKING IMR_ESTIMATED ( >=128, 2A )
+	BT	IMR_OUT
+	MOV	R11,R7			
+	BRA	IMR_OUT
+	NOP
+
+NEG_IMR:
+	CMP/GT	R12,R7			;CHECKING IMR_ESTIMATED (=<-128 ,-2A)
+	BF	IMR_OUT
+	MOV	R12,R7
+
+IMR_OUT:
+	MOV	R7,R5			;R5=R7=IMR_ESTIMATED
+	MOV	R7,@R6			;UPDATE IMR_0 FOR NEXT SAMPLING TIME
+
+        MOV     IMR_EST1A,R0
+        MOV     R7,@R0                  ;KEEP IMR_EST
+
+;******************************
+;CHECK FOR VECTOR OR SENSORLESS
+;******************************
+        MOV     RSTATUS_1,R0
+	MOV.B	@R0,R0
+	TST	#B'100000,R0
+	BF	DC_BREAK
+        MOV     SYSFLG9A,R1
+	ADD	#1,R1
+	MOV.B	@R1,R0
+	TST	#B'100,R0		
+	BF	OPEN_LOOP
+	TST	#B'10,R0
+	BT	VECTOR
+SSLESS:	MOV     SSLSRT,R14
+	JMP	@R14;SSL_SRT
+	NOP
+OPEN_LOOP:	
+;SSL_BREAK----------------------BEGIN-----------------------
+;        MOV     USTATUS_1,R1
+;        MOV.B   @R1,R0
+;        TST     #B'100,R0
+;        BT      OPEN1
+;        AND     #B'11111011,R0
+;        MOV.B   R0,@R1
+;        MOV     SYSFLG9A,R1
+;        ADD     #1,R1
+;        MOV.B   @R1,R0
+;        AND     #B'11111011,R0
+;        OR      #B'10,R0
+;        MOV.B   R0,@R1
+;        BRA     SSLESS
+;        NOP
+;OPEN1:
+;SSL_BREAK-------------END-----------------------------
+        MOV     VF,R14
+	JMP	@R14;V_F
+	NOP
+DC_BREAK:
+;SSL_BREAK--------------BEGIN-------------------------
+        MOV     SYSFLG9A,R1
+	ADD	#1,R1
+	MOV.B	@R1,R0
+	TST	#B'100,R0		
+	BF	VFBREAK
+	TST	#B'10,R0
+	BT	VECTOR
+        MOV     SSLSRT,R14
+        JMP     @R14;SSL_SRT
+        NOP
+;        AND     #B'11111101,R0
+;        OR      #B'100,R0
+;        MOV.B   R0,@R1
+;        MOV     USTATUS_1,R1
+;        MOV.B   @R1,R0
+;        OR      #B'100,R0
+;        MOV.B   R0,@R1
+;SSL_BREAK--------------END----------------------------
+VFBREAK:
+
+	MOV	BREAK,R14
+	JMP	@R14;DCBREAK
+	NOP
+
+	.ALIGN 4
+IQ_0:		.DATA.L _IQ_0
+IQ_COM0:	.DATA.L _IQ_COM0
+IQ_0WS:		.DATA.L _IQ_0WS
+IQ_EST1:	.DATA.L _IQ_EST
+IQ_COM2:	.DATA.L _IQ_COM
+IDQSCL_:	.DATA.L 1000
+;PARAMETER SETTING
+ID_COM0:        .DATA.L _ISD_RATED;480         ;((2.5(Y)*SQRT3)=>(D)*SQRT3)=>ID*2^6=480
+ID_0:           .DATA.L _ID_0
+ID_0WS:         .DATA.L _ID_0WS
+ID_EST1:        .DATA.L _ID_EST
+;PARAMETER 
+TDELAY1:        .DATA.L STATOR_T;57      	;Rs/pLs*Ts=800/.014*1E-3
+IQ_K_1:         .DATA.L _IQ_K_1
+IQ_K_2:         .DATA.L _IQ_K_2
+RSTATUS_1:      .DATA.L _R_STATUS
+ID_REDUCE:      .DATA.L _ID_REDUCE
+FRUN3:          .DATA.L FRUN
+IMR_0:          .DATA.L _IMR_0
+IMR_0WS:        .DATA.L _IMR_0WS
+IMR_MINP:       .DATA.L 48;128;FIELD WEAK       ;MINIMUM VALUE FOR POSITIVE IMR =2A*2^6
+TDELAY2:        .DATA.L ROTOR_T;5               ;Rr/Lr*Ts=400/0.078*1E-3 =5
+IMR_EST1A:      .DATA.L _IMR_EST
+IMR_MAXN:       .DATA.L -48;-128;FIELD WEAK     ;MAXIMUN VALUE FOR NEGATIVE IMR =-2A*2^6
+SYSFLG9A:       .DATA.L SYSFLG
+SSLSRT:         .DATA.L SSL_SRT
+VF:             .DATA.L V_F
+BREAK:          .DATA.L DCBREAK
+USTATUS_1:      .DATA.L _U_STATUS
+FMAX5:          .DATA.L _F_MAX
+VSTATUS7:       .DATA.L _V_STATUS
+INC_TIME:       .DATA.L _INC_TIME
+P10000:         .DATA.L 10000
+ID_REAL4:       .DATA.L _ID_REAL
+FLUX_KP:        .DATA.L _FLUX_KP
+K400:           .DATA.L 400
+ERR_FLUX:       .DATA.L _ERR_FLUX
+FLUX_COUNT1:    .DATA.L _FLUX_COUNT
+SSL_DUTYS:      .DATA.L _SSL_DUTYS
+SSL_DUTYE:      .DATA.L _SSL_DUTYE
+        .ALIGN 4
+;********************************************
+;THE FOLLOWING SOFTWARE IS FOR VECTOR CONTROL
+;********************************************
+VECTOR:
+;***********************************************************************
+;		ROTOR FLUX FREQUENCY AND ANGLE CALCULATION
+;			WO = pWM + Wsl
+;			p = POLE PAIRS
+;		       WM = ROTOR SPEED
+;	Wsl = Rr/Lr * IQ_ESTIMATED/IMR_ESTIMATED
+;	    - H'2/(M*IMR_ESTIMATED)*[IQ_ESTIMATED-IQ_REAL]
+;	     SETA = dSETA+SETA_0
+;		  = WO_kt*dt+[SUM{t=0->(k-1)t} WO_t*dt]
+;                 = 360*WO/(2*pi*Fs)+SETA_0
+;RESERVE REGISTER
+;		R1 = IQ_COM
+;		R2 = ID_ESTIAMTED
+;		R3 = IQ_ESTIMATED
+;		R4 = ID_COM
+;		R5 = IMR_ESTIMATED
+;*************************************************************************
+		MOV	ROTC,R6		;R6=Rr/Lr*2^6 =671	
+		MOV.W	@R6,R6
+		MULS	R6,R3		
+		STS	MACL,R7		;R7=Rr/Lr*IQ_ESITMATED*2^6
+
+;		MOV	IQ_ERR1,R8	
+;		MOV	@R8,R10		;R10=IQ_ESTIMATED-IQ_REAL
+;		MOV	GAIN3,R9	;R9=H'2/M*2^6
+;		MULS	R9,R10
+;		STS	MACL,R11	;R11=H'2/M*[IQ_ESTIMATED-IQ_REAL]*2^6
+
+;		SUB	R11,R7		;R7=Wsl*IMR_ESTIMATED*2^6
+		MOV	IMR_EST1,R0
+		MOV	@R0,R5
+		MOV	R5,R12
+;               DIVS    R12,R7          ;R7=Wsl
+                DIVSN   R12,R7          ;FIELD WEAK
+
+		MOV	WSL1,R0
+		MOV	R7,@R0		;KEEP Wsl
+
+;***********************************************************************
+;	     NEW ALGORITHM FOR CALCULATING ROTOR FLUX POSITION
+;***********************************************************************
+		MOV	WM,R0		
+		MOV	@R0,R13
+		MOV	POLE,R14
+		MOV.B	@R14,R14
+		SHAR	R14
+
+                SHAR    R13             ;FIELD WEAK
+                SHAR    R13
+
+                MULS    R13,R14
+		STS	MACL,R13	;R13=pWM
+
+                SHAL    R13             ;FIELD WEAK
+                SHAL    R13
+
+		ADD	R13,R7		;R7 = WO = pWM+Wsl
+
+                SHAR    R7              ;FIELD WEAK
+                SHAR    R7
+                SHAR    R7
+                
+		MOV	WO1,R0
+		MOV	R7,@R0		;KEEP WO
+
+                BRA     TO_CAL_I        ;3KPWM
+                NOP
+VECTOR_SETA:
+
+		MOV	WSL_0,R0
+		MOV	@R0,R7
+                MOV     ROTOR_,R14
+                JSR     @R14;ROTOR
+		NOP			;R7 = SETA_SL(k-1)+WsL(k-1)*Ts
+
+                MOV     MASKER,R6       ;3KPWM
+                MOV     TCNT2_,R0
+                MOV.W   @R0,R1
+                AND     R6,R1
+
+		MOV	WSL1,R0
+		MOV	@R0,R6
+		MOV	WSL_0,R0
+		MOV	R6,@R0		;UPDATE WSL_0
+;3KPWM
+;               MOV     RPOS,R0
+;               MOV     @R0,R1          ;R1=ROTOR POSITION (0-4096)
+;3KPWM                                  ;A PART OF ROTOR FLUX ANGLE BY pWM
+                MOV     POLE,R14
+		MOV.B	@R14,R14
+		SHAR	R14
+                MULS    R1,R14
+                STS     MACL,R1        ;R13=pWM
+
+;BRA NO_COM
+;NOP
+;*****************************************************************************
+;		          COMPENSATE ROTOR POSITION		
+;	pRPOS(k+1) = pRPOS(k) + pWM(k)*1.5*Ts   : k = THIS SAMPLING
+;*****************************************************************************
+		MOV	WM,R0
+		MOV	@R0,R2
+;                SHAL    R2              ;R2=pWM (in radian unit)
+                MOV     POLE,R14
+		MOV.B	@R14,R14
+		SHAR	R14
+
+                SHAR    R2               ;FIELD WEAK
+                SHAR    R2
+
+                MULS    R2,R14
+                STS     MACL,R2        ;R13=pWM
+
+;                SHAL    R2               ;FIELD WEAK
+;                SHAL    R2
+
+;                SHAR    R2              ;FIELD WEAK
+;                SHAR    R2
+                SHAR    R2
+                MOV     #24,R0          ;FIELD WEAK
+
+;                MOV     #3,R0
+		DIVS	R0,R6		;WSL/3
+		ADD	R6,R2		;R2=pWM(k)+WSL(k)/3
+                MOV     RPSCAL,R3       ;R3=1.5*Ts*360*4096/2pi=176*2
+		MOV.W	@R3,R3
+                SHAL    R3
+                SHAL    R3
+                MOV     VSTATUS2,R0     ;3KPWM
+                MOV.B   @R0,R0
+                TST     #B'100,R0
+                BF      SAMPL_1M
+                MOV     #3,R10
+                DIVS    R10,R3
+SAMPL_1M:
+
+                MULS    R2,R3
+		STS	MACL,R2			
+;                SHAR    R2              ;FIELD WEAK
+;                SHAR    R2              ;SCALING
+;                SHAR    R2
+		SHAR	R2
+		MOV	XSCAL1,R3
+                DIVS    R3,R2           ;R2 RANGE : 0-4096
+
+		ADD	R2,R1		;R1=pRPOS(k)+(pWM(k)+WSL(k)/3)*1.5*Ts
+NO_COM:
+		MOV	XSCAL1,R10
+		MULS	R1,R10			
+		STS	MACL,R1		
+		MOV	XSCAL2,R10
+		MOV.W	@R10,R10
+                DIVS    R10,R1          ;R1=R1*1440/4096, CHANGE TO SYSTEM SCALE
+;*************************
+		ADD	R7,R1		;R1=ROTOR FLUX ANGLE=pRPOS+(1/S)Wsl.dt
+;*************************
+;  V/F TEST
+;*************************
+;MOV SETA,R0
+;MOV @R0,R1
+;MOV #72,R7
+;ADD R7,R1
+;**************************
+
+		MOV	XSCAL1,R2		;R2=1440
+		MOV	XSCAL3,R3		;R3=-1440
+
+		MOV	R1,R4
+		SHAL	R4
+		BT	NEGCHK
+
+POSITIVE:
+		CMP/GE  R2,R1
+		BF	FXANG
+		SUB 	R2,R1
+		BRA	POSITIVE
+		NOP
+
+NEGCHK:  
+		ADD	R2,R1
+		MOV	R1,R3
+		SHAL	R3
+		BT	NEGCHK
+FXANG:		
+		MOV	SETA_,R0
+		MOV	R1,@R0		;KEEP SETA = ROTOR FLUX ANGLE
+
+                MOV     RETURN3K,R14    ;3KPWM
+                JMP     @R14;RETURN_PWM
+                NOP
+
+        .ALIGN 4
+ROTC:           .DATA.L R_L;328             ;Rr/Lr*2^6=0.4/0.078*2^6=328
+IMR_EST1:       .DATA.L _IMR_EST
+        .ALIGN 4
+;********************************
+;RETURN FROM BRANCH TO SENSORLESS
+;********************************
+TO_CAL_I:
+;***********************************************************************
+;	IU,IV TO ID,IQ TRANSFORMATION
+;***********************************************************************
+
+        MOV     IU,R0
+        MOV     @R0,R2                  ;HARDWARE IS -IV
+NEG R2,R2                               ;IV
+        MOV     IV,R0                   ;HARDWARE IS -IW
+        MOV     @R0,R1
+NEG R1,R1                               ;IW
+        ADD     R2,R1                   ;IU=-(IV+IW)
+        NEG     R1,R1                   ;R1=IU,R2=IV
+	MOV	SETA_,R0
+	MOV	@R0,R0
+
+	MOV	IUV2_DQ,R14
+	JSR	@R14;IUV2DQ
+	NOP				;R1=ID, R2=IQ
+
+        MOV     ISCAL,R0                ;ISCAL=2594
+        MOV     IDQSCL,R3               ;IDQSCL=1000
+;        MOV     NORM,R3                 ;NORM = 3000
+;        MOV.W   @R3,R3
+        MOV     R3,R4
+
+	MULS	R0,R1
+	STS	MACL,R1			;CHANGE SCALE TO 64:1A 
+					;BY * 64*8.3*2.5/512 = 2.594
+	DIVS	R3,R1	
+
+	MULS	R0,R2
+	STS	MACL,R2
+	DIVS	R4,R2
+
+        MOV     R1,R10
+        MOV     R2,R11
+
+      ;  SHAR R1
+      ;  SHAR R1
+
+;     SHAR R1
+;     SHAR R1
+;     SHAR R1
+;     SHAR R1
+
+      ;  SHAR R2
+      ;  SHAR R2
+
+;     SHAR R2
+;     SHAR R2
+;     SHAR R2
+;     SHAR R2
+
+	MULS	R1,R1
+	STS	MACL,R3
+	MULS	R2,R2
+	STS	MACL,R4
+	ADD	R3,R4			;R4=ID^2+IQ^2
+
+	MOV	L2,R0
+	CMP/GT  R0,R4			;IF ID^2+IQ^2 > L2
+	BF	NOT_OVER
+	MOV	L2,R4			;THEN ID^2+IQ^2 = L2
+NOT_OVER:
+
+;CORRECT1---------BEGIN-------------------------------------------
+        SHAR    R4
+        SHAR    R4
+        SHAR    R4
+        SHAR    R4
+        SHAR    R4
+        SHAR    R4
+;        MOV     T61,R5
+;        DIVSN    R5,R4                   ;R4=(ID^2+IQ^2)/61
+;        SHAL    R4                      ;R4=[(ID^2+IQ^2)/72]*2
+;CORRECT1---------END---------------------------------------------
+        MOV     R4,R1                   ;STORE R4 TO R1 FOR FIND SQROOT
+
+        MOV     #0,R0
+	CMP/GT	R0,R1			;IF R1 > 2
+	BT	NEVER1			;THEN JUMP TO NEVER1
+        MOV     #0,R1                  ;ELSE KEEP 2 TO R1
+	BRA	NEVER
+	NOP
+NEVER1:
+	MOV	L1,R0			
+	CMP/GT	R0,R1			;IF R1 > L1
+	BF	NEVER
+	MOV	L1,R1			;THEN KEEP L1 TO R1
+NEVER:
+
+	MOV	SQROOT,R14		;CALL SUBROUTINE SQROOT
+	JSR	@R14;SQ_ROOT
+	NOP
+        MOV     #25,R6;#25*4
+	MULS	R6,R13			;SCALE UP WITH 25
+	STS	MACL,R5
+;CORRECT1-----------BEGIN----------------------------------
+;        SHAR    R5
+;        SHAR    R5
+;        SHAR    R5                      ;SCALE DOWN WITH 8
+;CORRECT1------------END----------------------------------
+
+        MOV     IGAIN,R0
+        MOV.W   @R0,R0
+        MULS    R0,R5
+        STS     MACL,R5
+        MOV     K600,R0                 ;CORRECT1 CHANGE FROM #100 TO K600
+        DIVS    R0,R5
+
+        MOV     IRMS,R0
+        MOV     R5,@R0                  ;KEEP VALUE TO IRMS(SCALE WITH 100)
+
+        BSR     NORM_IDQ
+        NOP
+
+        MOV     #10,R1
+	DIVS	R1,R5
+	MOV	TEN_COUNT,R1
+	MOV.B	@R1,R0
+	ADD	#1,R0
+	MOV.B	R0,@R1
+	MOV	ACCUI,R3
+	MOV	@R3,R4
+	ADD	R5,R4
+	MOV	R4,@R3
+	CMP/EQ	#64,R0
+	BF	NOT_TEN
+	MOV	#0,R0
+	MOV.B	R0,@R1
+	SHAR	R4
+	SHAR	R4
+	SHAR	R4
+	SHAR	R4
+	SHAR	R4
+	SHAR	R4
+	MOV	AMP,R1
+	MOV	R4,@R1
+	MOV	R0,@R3
+NOT_TEN:
+;FLYING-----------BEGIN-------------------------------------------
+        MOV     IRMS,R5
+        MOV     @R5,R5
+;IMPROVE5   MOV     #10,R1
+;IMPROVE5   DIVS    R1,R5
+        MOV     FIL_TIME,R1
+        MOV.W   @R1,R0
+	ADD	#1,R0
+        MOV.W   R0,@R1
+        MOV     SUM_I,R3
+	MOV	@R3,R4
+	ADD	R5,R4
+	MOV	R4,@R3
+;FAST1------------BEGIN-------------------------
+        MOV     A_FIL,R5
+        MOV.W   @R5,R5
+;        MOV     #4,R5;V512,R5           ;FAST1
+;FAST1-------------END--------------------------
+        CMP/EQ  R5,R0
+        BF      NOT_READY
+	MOV	#0,R0
+        MOV.W   R0,@R1
+;IMPROVE5
+;       DIVS16  R4
+;FAST1-----------BEGIN----------------------------
+        MOV A_FIL,R5
+        MOV.W @R5,R5
+        DIVS R5,R4
+;        SHAR R4
+;        SHAR R4
+;        SHAR R4
+;IMPROVE5
+;        DIVS32  R4
+;FAST1------------END----------------------------
+        MOV     FIL_AMP,R1
+        MOV     @R1,R2
+        MOV     AMPBACK,R5
+        MOV     R2,@R5
+        MOV     R4,@R1
+	MOV	R0,@R3
+NOT_READY:
+;FLYING------------END--------------------------------------------
+
+        MOV     SYSFLG9,R1
+	ADD	#1,R1
+	MOV.B	@R1,R0
+	TST	#B'100,R0		;IF VF METHOD 
+	BF	VF_CONTINUE		;THEN JUMP TO VF
+
+	BRA	VSD_COMM
+	NOP		       
+
+VF_CONTINUE:
+	MOV	R_STATUS,R1
+	MOV.B	@R1,R0
+	TST	#B'100000,R0
+	BT      VF_NO_BRK
+	BRA	DC_CONTINUE
+	NOP
+VF_NO_BRK:
+	BRA	VF_CONTINUE1
+	NOP
+
+                .ALIGN 4
+;PARAMETER SETTING
+;TDELAY1:        .DATA.L STATOR_T;57      	;Rs/pLs*Ts=800/.014*1E-3
+R_STATUS:       .DATA.L _R_STATUS
+VSTATUS2:       .DATA.L _V_STATUS
+;IQ_0:          .DATA.L _IQ_0
+;IQ_COM0:	.DATA.L _IQ_COM0
+;IQ_0WS:		.DATA.L _IQ_0WS
+WM:		.DATA.L _WM
+XSCAL1:		.DATA.L 1440
+XSCAL2:         .DATA.L PULSE;4096
+XSCAL3:		.DATA.L -1440
+RPSCAL:         .DATA.L RPSCL;176/2           ;1.5*1mS*360*2400/2pi
+RPOS:		.DATA.L _RPOS
+WSL_0:		.DATA.L _WSL_0
+WSL1:		.DATA.L _WSL
+WO1:		.DATA.L _WO
+IDQSCL:		.DATA.L 1000		;ID AND IQ SCALE
+SETA_:          .DATA.L _SETA
+TCNT2_:          .DATA.L H'5FFFF1C
+MASKER:         .DATA.L H'FFFF
+RETURN3K:       .DATA.L RETURN_PWM
+
+;IQ_EST1:	.DATA.L _IQ_EST
+;IQ_COM2:	.DATA.L _IQ_COM
+
+POLE:		.DATA.L _POLE;2		;POLE PAIR
+SCAL1:		.DATA.L 35/2		;2pi*1000/360
+GAIN2:          .DATA.L 0               ;H'2*Lr/(M*Rr)*1000
+GAIN3:          .DATA.L 0               ;H'2/M*2^6
+ADT_Kp:		.DATA.L	 5		;Kp
+ADT_Ti:		.DATA.L  5		;1/(400*DT)=1/(1600/4*DT)
+ROTOR_:         .DATA.L ROTOR
+IU:             .DATA.L  _IU
+IV:		.DATA.L  _IV
+ID_ERR1:	.DATA.L _ID_ERR
+IQ_ERR1:	.DATA.L _IQ_ERR
+WM_EST:         .DATA.L _WM_EST
+MAX_WO:		.DATA.L 32765
+MIN_WO:		.DATA.L -32765
+VQ_COM1:	.DATA.L _VQ_COM
+RM:		.DATA.L 300			;CORE LOSS
+TEMP1:		.DATA.L 500
+TEMP2:		.DATA.L 506
+ISCAL:		.DATA.L 2246			;64*8.3*2.5/512 = 2594
+T_VF:           .DATA.L TEST_VF
+SYSFLG9:	.DATA.L SYSFLG
+IRMS:		.DATA.L I_RMS
+SQROOT:		.DATA.L SQ_ROOT
+;CORRECT1---------------BEGIN------------------------------------------
+;T61:            .DATA.L 61;72
+L1:		.DATA.L 65000		;UPPER LIMIT FOR SUBROUTINE SQROOT
+L2:             .DATA.L 4160000;2340000 ;UPPER LIMIT OF ID^2+IQ^2 (65000*64)
+;CORRECT1----------------END--------------------------------------------
+K600:           .DATA.L 600
+AMP:            .DATA.L AMPERE
+ACCUI:		.DATA.L _ACCUI	
+TEN_COUNT:	.DATA.L _TEN_COUNT
+IUV2_DQ:	.DATA.L IUV2DQ
+C25X64:         .DATA.L 1600
+FIL_TIME:       .DATA.L _FIL_TIME
+SUM_I:          .DATA.L _SUM_I
+FIL_AMP:        .DATA.L _FIL_AMP
+V512:           .DATA.L 256;IMPROVE5
+AMPBACK:        .DATA.L _AMP_BACK
+A_FIL:          .DATA.L _A_FIL
+                .ALIGN 4
+NORM_IDQ:
+
+        STS.L   PR,@-SP
+MOV R10,R1
+MOV R11,R2
+;CORRECT1------------------BEGIN---------------------------------
+MOV I1000,R3
+MULS R1,R3
+STS  MACL,R1
+MOV #100,R3
+DIVS R3,R1
+MOV IGAIN,R3
+MOV.W @R3,R3
+MULS R3,R1
+STS MACL,R1
+MOV NORM,R3
+MOV.W @R3,R3
+DIVS R3,R1
+
+MOV I1000,R3
+MULS R2,R3
+STS  MACL,R2
+MOV #100,R3
+DIVS R3,R2
+MOV IGAIN,R3
+MOV.W @R3,R3
+MULS R3,R2
+STS MACL,R2
+MOV NORM,R3
+MOV.W @R3,R3
+DIVS R3,R2
+
+;MOV I1000,R3
+;MULS R3,R1
+;STS MACL,R1
+;MOV NORM,R3
+;MOV.W @R3,R3
+;DIVS R3,R1
+
+;MOV I1000,R3
+;MULS R3,R2
+;STS MACL,R2
+;MOV NORM,R3
+;MOV.W @R3,R3
+;DIVS R3,R2
+
+;CORRECT1------------------END-----------------------------------
+        MOV     ID_REAL1,R0
+        MOV     R1,@R0                  ;KEEP ID
+        MOV     IQ_REAL1,R0
+        MOV     R2,@R0                  ;KEEP IQ
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+        .ALIGN 4
+ID_REAL1:       .DATA.L _ID_REAL
+IQ_REAL1:       .DATA.L _IQ_REAL
+I1000:          .DATA.L 1000
+NORM:           .DATA.L IDQSCL9;3000            ;IQ NORMALIZE
+IGAIN:          .DATA.L _I_GAIN
+;I620:           .DATA.L 620
+;IINV1:           .DATA.L I_INV
+;************************************************************************
+;READ IU,IV AND TRANSFORM TO D,Q AXIS TO TAKE ID_REAL, IQ_REAL ,ID,Q_ERROR
+; AND ALSO STORE THE VALUE OF ID_RE0 USE IN THE COMMAND OF IMR_ESTIMATED
+;*************************************************************************
+
+ID_RE0:		.DATA.L _ID_RE0
+		.ALIGN 4
+
+;*************************************************************************
+;			SPEED IDENTIFICATION 		
+;		WM_EST = P*IMR_EST*M*(Kp+Ki)*IQ	_ERR
+;			FOR SPEED SENSORLESS
+;*************************************************************************			
+
+;*****************************************************************************
+;	        	     DECOUPLING CONTROL
+;
+;	VD_COM = ID_COM*Rs - WO*pLs*IQ_EST + Rr*M^2/Lr^2*[ID_EST-IMR_EST]
+;	         + pLs*H'1*ID_ERR.
+;
+;	VQ_COM = IQ_COM*Rs + WO*Ls*ID_EST + M^2/Lr*WO*[ID_EST-IMR_EST]
+;		 + M/Lr*H'2*IQ_ERR + pLs*H'1*IQ_ERR.
+;		   (GAIN4)           (GAIN1)
+;*****************************************************************************
+VSD_COMM:
+        MOV     FRUN4,R1
+        MOV.W   @R1,R1
+        MOV     FMAX6,R2
+        MOV.W   @R2,R2
+        CMP/GT  R2,R1
+        BT      FIELD_WEAK1
+
+        MOV     ID_COM11,R1               ;R1 = ID_COM = 5.2*2^6
+        MOV     @R1,R1
+        BRA     NOT_WEAK1
+        NOP
+
+FIELD_WEAK1:
+        MOV     ID_REDUCE1,R1
+        MOV     @R1,R1
+NOT_WEAK1:
+;SOFT1-------------------BEGIN-------------------------------
+        MOV     FLUX_COUNT2,R0
+        MOV.B   @R0,R0
+        MULS    R0,R1
+        STS     MACL,R1
+        MOV     #100,R0
+        DIVS    R0,R1
+;SOFT1--------------------END--------------------------------
+
+;SSL_FLY-----------------BEGIN-------------------------------
+        MOV     VSTATUS2_,R0
+        MOV.B   @R0,R0
+        TST     #B'100000,R0
+        BT      NOT_FIND2
+        MOV     #5,R2
+        DIVS    R2,R1
+        BRA     NOT_INC_FLUX2
+        NOP
+NOT_FIND2:
+        TST     #B'1000000,R0
+        BT      NOT_INC_FLUX2
+        MOV     INC_TIME1,R2
+        MOV.W   @R2,R0
+        MULS    R0,R1
+        STS     MACL,R1
+        MOV     P10000_,R2
+        DIVS    R2,R1
+NOT_INC_FLUX2:
+;SSL_FLY-------------------END-------------------------------
+;SSL_BREAK-----------------BEGIN-----------------------------
+                MOV     FLGSYS1,R0
+                ADD     #1,R0
+                MOV.B   @R0,R0
+                TST     #B'10,R0
+                BT      NOT_SSL_BREAK3
+                MOV     RSTATUS5,R0
+                MOV.B   @R0,R0
+                TST     #B'100000,R0
+                BT      NOT_SSL_BREAK3
+                TST     #B'10000,R0
+                BT      STOP_BREAK1
+                MOV     SSL_DUTYS1,R0
+                MOV.B   @R0,R0
+                MULS    R1,R0
+                STS     MACL,R1
+                SHAR    R1
+                BRA     NOT_SSL_BREAK3
+                NOP
+STOP_BREAK1:
+                MOV     SSL_DUTYE1,R0
+                MOV.B   @R0,R0
+                MULS    R1,R0
+                STS     MACL,R1
+                SHAR    R1
+NOT_SSL_BREAK3:
+
+;SSL_BREAK------------------END------------------------------
+
+;                MOV     ID_COM11,R1             ;R1=ID_COM
+;                MOV     @R1,R1
+		MOV	Rs_,R2			;R2=Rs=1800	
+		MOV.W	@R2,R2
+		MULS	R1,R2
+		STS	MACL,R1			;R1=ID_COM*Rs*1000
+
+		MOV	IQ_EST11,R0
+		MOV	@R0,R2			;R2=IQ_EST
+		MOV     pLs_,R0			;R0=pLs
+		MOV.W	@R0,R0
+		MULS	R0,R2
+		STS	MACL,R2			;R2=pLs*IQ_EST*1000
+		MOV	WO_,R0
+		MOV	@R0,R3			;R3=WO
+		MULS	R2,R3
+		STS	MACL,R2			;R2=pLs*WO*IQ_EST*1000*2^6
+		
+                SHAR    R2                      ;FIELD WEAK
+		SHAR	R2
+		SHAR	R2
+;                SHAR    R2                      ;SCALE DOWN BY /2^6
+;                SHAR    R2
+;                SHAR    R2                      ;R2=pLs*WO*IQ_EST*1000
+
+		;MOV	ID_EST11,R0
+		;MOV	@R0,R3			;R3=ID_EST
+		;MOV	IMR_EST,R0
+		;MOV	@R0,R4			;R4=IMR_EST
+		;SUB	R4,R3			;R3=ID_EST-IMR_EST
+
+		;MOV	R3,R11			;**** R11=ID_EST-IMR_EST *****		
+
+		;MOV	RrM2Lr2,R5		;R5=Rr*M^2/Lr^2=1280
+		;MULS	R3,R5
+		;STS	MACL,R3			;R3=Rr*M^2/Lr^2*[ID_EST-
+						;IMR_EST]*1000
+
+		;MOV	ID_ERR,R0
+		;MOV	@R0,R4			;R4=ID_ERR
+		;MOV	GAIN1,R5		;R5=pLs*H'1*1000
+		;MULS	R4,R5
+		;STS	MACL,R4			;R4=pLs*H'1*ID_ERR*1000
+
+		;ADD	R1,R3			;R3 ={ Rs*ID_COM + Rr*M^2/Lr^2*
+						;[ID_EST-IMR_EST] }*1000
+		;ADD	R4,R3			;R3 ={ Rs*ID_COM + Rr*M^2/Lr^2*
+					;[ID_EST-IMR_EST]+pLs*H'1*ID_ERR }*1000
+		;SUB	R2,R3			;R3=VD_COM*1000	
+		MOV	R1,R3   ;;;
+		SUB	R2,R3	;;; 			
+
+		MOV	IDQSCL11,R10
+		DIVS	R10,R3			;SCALE DOWN BY /1000
+
+		SHAR	R3
+		SHAR	R3			;SCALE DOWN BY /2^3
+		SHAR	R3
+;ID_LOOP-------------------BEGIN-------------------------
+MOV ERR_FLUX1,R0
+MOV @R0,R0
+;SHAR R0
+;SHAR R0
+ADD R0,R3
+;ID_LOOP---------------------END------------------------
+                MOV     VD_COM11,R0
+                MOV     R3,@R0                  ;KEEP VD_COM
+
+;**********************END OF CALCULATING VD_COM ***********************
+
+VSQ_COMM:	
+		MOV	IQ_COM11,R0
+		MOV	@R0,R1			;R1=IQ_COM
+		MOV	Rs_,R2			;R2=Rs*1000
+		MOV.W	@R2,R2
+		MULS	R1,R2			
+		STS	MACL,R1			;R1=IQ_COM*Rs*1000
+
+		MOV	ID_EST11,R0
+		MOV	@R0,R2			;R2=ID_EST
+		MOV	Ls_,R3			;R3=Ls*1000
+		MOV.W	@R3,R3
+		MULS	R3,R2
+		STS	MACL,R2			;R2=ID_EST*Ls*1000
+
+						;SCALE DOWN BY /2 : 
+						;max{ Ls*ID_EST } = 333*131 
+						;=43623 > 32767 ,SO / BY 2 
+		SHAR	R2			;TO DECREASE max{ Ls*ID_EST }
+						;TO EQUAL 21881. BECAUSE WE 
+						;WILL USE THIS VALUE TO MULTIPLIER
+						;WO ,SO EACH OPERANDS MUST NOT
+						;EXCEED 32767 
+		SHAR	R2			;R2=WO*Ls*ID_EST
+
+		MOV	WO_,R0
+		MOV	@R0,R4			;R4=WO
+		MULS	R4,R2
+		STS	MACL,R2			;R2=WO*LS*ID_EST*1000*2^5
+		
+                SHAR    R2                      ;FIELD WEAK
+;               SHAR    R2
+;               SHAR    R2                      ;SCALE DOWN BY /2^5
+;               SHAR    R2                      ;!! HAVE SCALED DOWN BY 2 BEFORE
+;		SHAR	R2			;R2=WO*Ls*ID_EST
+
+		;MOV	M2Lr,R9			;R9=M^2/Lr*1000
+		;MULS	R11,R9			;R11=ID_EST-IMR_EST
+		;STS	MACL,R3			;R3=M^2/Lr*[ID_EST-IMR_EST]*1000
+
+		;SHAR	R3			;SCALE DOWN BY /2 : SAME REASON
+						;IN THE CASE OF WO*Ls*ID_EST
+
+		;MOV	WO_,R0
+		;MOV	@R0,R4			;R4=WO		
+		;MULS	R4,R3
+		;STS	MACL,R3	   	        ;R3=M^2/Lr*WO*[ID_EST-IMR_EST]*
+						;1000*2^5
+
+		;SHAR	R3
+		;SHAR	R3
+		;SHAR	R3			;SCALE DOWN BY /2^5
+		;SHAR	R3			;R3=M^2/Lr*WO*[ID_EST-IMR_EST]*
+		;SHAR    R3			;*1000	
+
+		;MOV	IQ_ERR,R0
+		;MOV	@R0,R12			;R12=IQ_ERR
+		;MOV	GAIN4,R5		;R5=H'2*M/Lr*1000
+		;MULS	R5,R12
+		;STS	MACL,R4			;R4=H'2*M/Lr*IQ_ERR*1000
+
+		;MOV	GAIN1,R5		;R5=pLs*H'1*1000
+		;MULS	R5,R12			;R12=IQ_ERR
+		;STS	MACL,R5			;R5=pLs*H'1*IQ_ERR*1000
+
+		ADD	R1,R2			;R2=IQ_COM*Rs+WO*LS*ID_EST
+		MOV	R2,R5 ;;;
+		;ADD	R4,R5		     ;R5=H'2*M/Lr*IQ_ERR+pLs*H'1*IQ_ERR
+		;ADD	R2,R5								
+                ;SUB     R3,R5                   ;R5=VQ_COM*1000
+
+		MOV	IDQSCL11,R10
+		DIVS	R10,R5			;SCALE DOWN BY /1000
+
+		SHAR	R5
+		SHAR	R5			;SCALE DOWN BY /2^3
+                SHAR    R5
+
+MOV FLGSYS1,R0
+ADD #1,R0
+MOV.B @R0,R0
+TST #B'10,R0
+BT  NOT_BOOST
+
+MOV     WM_COM10,R0
+MOV     @R0,R1
+MOV	R1,R0
+SHAL	R0
+BF	POSI3
+NEG	R1,R1
+POSI3:
+MOV	V402,R2
+MOV.W   @R2,R2
+CMP/GE  R2,R1
+BT	NOT_BOOST
+
+MOV TBOOST,R0
+MOV.W @R0,R0
+MOV REFER,R10
+MULS R10,R0
+STS MACL,R0
+MOV #100,R10
+DIVS R10,R0
+MOV     WM_COM10,R10
+MOV     @R10,R10
+SHAL	R10
+BF	POSI2
+NEG	R0,R0
+POSI2:
+ADD R0,R5
+NOT_BOOST:  
+
+;ID_LOOP--------------------BEGIN------------------------
+MOV ERR_FLUX1,R10
+MOV @R10,R10
+;SHAR R10
+;SHAR R10
+MOV FLGSYS1,R0
+MOV.B @R0,R0
+TST #B'10000,R0
+BT  FWD_ACT1
+NEG R10,R10
+FWD_ACT1:
+ADD R10,R5
+;ID_LOOP----------------------END-------------------------
+;SSL_BREAK--------------BEGIN-----------------------------
+                MOV     FLGSYS1,R0
+                ADD     #1,R0
+                MOV.B   @R0,R0
+                TST     #B'10,R0
+                BT      NOT_SSL_BREAK2
+                MOV     RSTATUS5,R0
+                MOV.B   @R0,R0
+                TST     #B'100000,R0
+                BT      NOT_SSL_BREAK2
+                MOV     #0,R5
+NOT_SSL_BREAK2:
+;SSL_BREAK---------------END------------------------------
+                MOV     VQ_COM11,R0
+		MOV	R5,@R0			;KEEP VQ_COM
+
+;********************** END OF CALCULATING VQ_COM *************************
+
+;**************************************************************************
+;
+;	   !!!!!!!!!!!	  PWM SIGNAL GENERATING   !!!!!!!!!!!!
+;
+;**************************************************************************
+;                MOV     VD_COM11,R10
+;                MOV     @R10,R1                 ;R1 = VD_COM
+
+;                MOV     VQ_COM11,R10
+;                MOV     @R10,R2                 ;R2 = VQ_COM
+PWMGEN1:
+;**********************************
+;DEADTIME FOR SENSORLESS
+;**********************************
+                MOV FLGSYS1,R0
+                ADD #1,R0
+                MOV.B @R0,R0
+                TST #B'10,R0
+                BT  NOT_NEW
+                MOV     V_DC11,R10
+                MOV     @R10,R5         ;R5 = READ VDC FOR DC LINK COMPENSATE
+;               MOV     VDC2,R5
+
+                MOV     DTIMENEW1,R10
+		JSR	@R10			;JUMP TO DEAD_TIME COMPENSATE
+		NOP				;MODULE
+		MOV	UCX11,R0			
+		MOV	R3,@R0			;KEEP UCX
+		MOV	UCY11,R0
+                MOV     R4,@R0                  ;KEEP UCY
+                BRA     NOVEL
+                NOP
+NOT_NEW:
+;****************************************
+;END OF DEADTNEW FOR SENSORLESS
+;****************************************
+
+                MOV     IQ_COM11,R10
+                MOV     @R10,R1                 ;R1 = IQ_EST
+                MOV     SETA11,R10
+                MOV     @R10,R2                 ;R2 = ROTOR FLUX ANGLE
+                MOV     V_DC11,R10
+                MOV     @R10,R5	   	;R5 = READ VDC FOR DC LINK COMPENSATE
+;                MOV     VDC2,R5
+
+                MOV     DEADTCOM11,R10
+		JSR	@R10			;JUMP TO DEAD_TIME COMPENSATE
+		NOP				;MODULE
+		MOV	UCX11,R0			
+		MOV	R3,@R0			;KEEP UCX
+		MOV	UCY11,R0
+                MOV     R4,@R0                  ;KEEP UCY
+NOVEL:
+;3KPWM
+;                MOV     V_DC11,R10
+;                MOV     @R10,R3         ;R3 = READ VDC FOR DC LINK COMPENSATE
+;                MOV     VDC2,R3
+  		
+;                MOV     SETA11,R10
+;                MOV     @R10,R0                 ;R0 = ROTOR FLUX ANGLE
+
+;                MOV     VD_COM11,R10
+;                MOV     @R10,R1                 ;R1 = VD_COM
+
+;                MOV     VQ_COM11,R10
+;                MOV     @R10,R2                 ;R2 = VQ_COM
+
+;                MOV     UCX11,R10
+;                MOV     @R10,R12                ;R12 = UCX
+
+;                MOV     UCY11,R10
+;                MOV     @R10,R13                ;R13 = UCY
+;MOV #0,R12
+;MOV R12,R13
+;3KPWM
+;FLYING-------BEGIN-----------------------------------------
+;FLYINGC
+
+;SSL_FLY----------------------BEGIN-------------------------
+;MOV VD_COM11,R1
+;MOV @R1,R1
+;MOV VQ_COM11,R2
+;MOV @R2,R2
+;FLYINGC
+;                MOV FLGSYS1,R5
+;                ADD #1,R5
+;                MOV.B @R5,R5
+;                MOV #B'10,R8
+;                TST R8,R5                       ;IF VECTOR CONTROL MODE
+;                BT  SEARCH_END1                 ;THEN SEARCH_END1
+
+;                MOV VSTATUS2_,R5
+;                MOV.B @R5,R5
+;                MOV #B'100000,R8
+;                TST R8,R5                       ;IF SEARCHING SPEED FLG NOT SET
+;                BT  NOT_SEARCH1                 ;THEN NOT_SEARCH
+;                MOV #10,R5                      ;ELSE DRIVE OUTPUT VOLT ONLY 10%
+;                DIVS R5,R2
+;                MOV #10,R5
+;                DIVS R5,R1
+;FLYINGC
+;MOV VD_COM11,R5
+;MOV R1,@R5
+;MOV VQ_COM11,R5
+;MOV R2,@R5
+;FLYINGC
+;                BRA SEARCH_END
+;                NOP
+;NOT_SEARCH1:
+;                MOV VSTATUS2_,R5
+;                MOV.B @R5,R5
+;                MOV #B'1000000,R8
+;                TST R8,R5                       ;IF WEIGHTING FLG NOT SET
+;                BT  SEARCH_END1                 ;THEN SEARCH END
+;                MOV WEIGHT1,R5                   ;ELSE MULTIPLY OUTPUT VOLT
+;                MOV.W @R5,R5                    ;WITH WEIGHT
+;                MULS R5,R2
+;                STS MACL,R2
+;                MULS R5,R1
+;                STS MACL,R1
+;                MOV J30000,R8
+;                DIVS R8,R2
+;                MOV J30000,R8
+;                DIVS R8,R1
+;FLYINGC
+;MOV VD_COM11,R8
+;MOV R1,@R8
+;MOV VQ_COM11,R8
+;MOV R2,@R8
+;FLYINGC
+;SEARCH_END1:
+;FLYING-------END-------------------------------------------
+;SSL_FLY------------------------END-------------------------
+                BRA     P_W_M
+		NOP
+	.ALIGN 4
+;PARAMETER SETTING
+Rs_:	.DATA.L _R_STATOR;800
+pLs_:	.DATA.L _SIGMA_L;14
+Ls_:	.DATA.L _L_STATOR;92
+ID_COM11:.DATA.L _ISD_RATED;480
+ID_REDUCE1: .DATA.L _ID_REDUCE
+FRUN4:      .DATA.L FRUN
+FMAX6:      .DATA.L _F_MAX
+IQ_EST11:.DATA.L _IQ_EST
+IQ_COM11:.DATA.L _IQ_COM
+IDQSCL11:.DATA.L 1000
+WO_:	 .DATA.L _WO
+ID_EST11:.DATA.L _ID_EST
+DEADTCOM11: .DATA.L DEADT_COM
+DTIMENEW1:  .DATA.L DTIME_NEW
+VD_COM11: .DATA.L _VD_COM
+VQ_COM11: .DATA.L _VQ_COM 
+UCX11:    .DATA.L _UCX
+UCY11:	  .DATA.L _UCY
+SETA11:	  .DATA.L _SETA
+V_DC11:	  .DATA.L _V_DC
+FLGSYS1: .DATA.L SYSFLG
+TBOOST:	  .DATA.L _T_BOOST
+WM_COM10:  .DATA.L SET_WM
+REFER:    .DATA.L 1759
+V402:     .DATA.L _MIN_BAND
+VSTATUS2_:.DATA.L _V_STATUS
+WEIGHT1:  .DATA.L _WEIGHT
+J30000:   .DATA.L 30000
+INC_TIME1:  .DATA.L _INC_TIME
+P10000_:    .DATA.L 10000
+ERR_FLUX1:  .DATA.L _ERR_FLUX
+FLUX_COUNT2:.DATA.L _FLUX_COUNT
+RSTATUS5:   .DATA.L _R_STATUS
+SSL_DUTYS1: .DATA.L _SSL_DUTYS
+SSL_DUTYE1: .DATA.L _SSL_DUTYE
+        .ALIGN 4
+;**************
+; V/F TEST
+;**************
+;MOV VDTEST,R1
+;MOV #0,R2
+;MOV #0,R12
+;MOV #0,R13
+;**************
+DCBREAK:
+		BRA	TO_CAL_I
+		NOP
+DC_CONTINUE:
+
+		MOV	SE_TA,R0
+		MOV	@R0,R0
+
+		
+		CMP/EQ	#0,R0		;IF SETA=0 
+		BT	BREAK_FWD	;THEN NOT CHECK SEGTOR		
+
+		MOV	O720,R1
+		CMP/GT	R1,R0		;IF SETA > 720
+		BT	SEG456		;THEN VECTOR WILL BE IN SEG4,5,6
+		MOV	O240,R1		
+		CMP/GT	R1,R0		;IF SETA > 240
+		BT	SEG23		;THEN VECTOR WILL BE IN SEG 2,3
+;		CMP/EQ	#0,R0		;IF SETA = 0 
+;		BT	SEG6		;THEN VECTOR WILL BE IN SEG 6
+		MOV	O240,R0		;SEG1 (110)
+		BRA	SET_DUTY	
+		NOP
+SEG23:		
+		MOV	O480,R1
+		CMP/GT	R1,R0		;IF SETA > 480
+		BT	SEG3		;THEN VECTOR WILL BE IN SEG 3
+		MOV	O480,R0		;SEG 2(010)
+		BRA	SET_DUTY
+		NOP
+SEG3:
+		MOV	O720,R0		;SEG 3(011)
+		BRA	SET_DUTY
+		NOP
+SEG456:		
+		MOV	O960,R1
+		CMP/GT	R1,R0		;IF SETA > 960
+		BT	SEG56		;THEN VECTOR WILL BE IN SEG 5,6
+		MOV	O960,R0		;SEG 4(001)
+		BRA	SET_DUTY
+		NOP
+SEG56:
+		MOV	O1200,R1
+		CMP/GT	R1,R0		;IF SETA > 1200
+		BT	SEG6		;THEN VECTOR WILL BE IN SEG 6
+		MOV	O1200,R0	;SEG 5(101)
+		BRA	SET_DUTY
+		NOP
+SEG6:		
+		MOV	#0,R0		;SEG 6(100)
+;		MOV	#0,R0
+SET_DUTY:
+		MOV	SYSFLG10,R4
+		MOV.B	@R4,R4
+		MOV	#B'10000,R5
+		TST	R5,R4		;IF FWD FLAG SET 
+		BT	BREAK_FWD	;THEN JMP TO BREAK_FWD
+		MOV	O240,R1		;ELSE SUBTRACT SETA WITH 240
+		SUB	R1,R0
+		MOV	R0,R1
+		SHAL	R1		;IF SETA IS NEGATIVE 
+		BF	BREAK_FWD	
+		MOV	O1200,R0	;THEN VECTOR IS V5(101)
+					
+BREAK_FWD:
+		MOV	RSTATUS,R4
+		MOV.B	@R4,R4
+		MOV	#B'10000,R5
+		TST	R5,R4		;IF BREAK WHILE STOP
+		BT	STP_DUTY	;THEN JMP TO SET DUTY WHEN STOP
+		MOV	DUTYS,R1	;ELSE SET START BREAK DUTY
+		MOV.W	@R1,R1
+;		MOV	DUTY,R1
+		BRA	SET_VQ
+		NOP
+STP_DUTY:
+		MOV	DUTYE,R1
+		MOV.W	@R1,R1
+SET_VQ:
+;		MOV	#0,R2
+		MOV	R1,R2
+		MOV	#0,R1
+		MOV	VDC2,R3
+		MOV	#0,R12
+		MOV	#0,R13
+
+                MOV     PWMGEN3,R14             ;3KPWM
+                JSR     @R14;PWM_GEN
+                NOP                             ;GENERATING PWM SIGNAL
+                BRA     MONITOR
+                NOP
+;               BRA     P_W_M
+;               NOP
+
+        .ALIGN 4
+O240:		.DATA.L 240
+O480:		.DATA.L 480
+O720:		.DATA.L 720
+O960:		.DATA.L 960
+O1200:		.DATA.L 1200
+SE_TA:		.DATA.L _SETA
+RSTATUS:	.DATA.L _R_STATUS
+SYSFLG10:	.DATA.L SYSFLG
+VDC2:		.DATA.L 2489
+DUTYS:		.DATA.L _DUTYS
+DUTYE:		.DATA.L _DUTYE
+PWMGEN3:        .DATA.L PWM_GEN
+
+        .ALIGN 4
+;V_F:
+;                BSR     READ_VDC
+;                NOP
+VF_SETA:                                ;3KPWM
+
+                .INCLUDE "SLIP_VF.H"
+
+                MOV     FRUN21,R0
+		MOV.W	@R0,R1		
+
+                MOV     DEL_FREQ1,R0
+                MOV.W   @R0,R12
+		ADD	R12,R1
+
+		MOV	SYSFLG8,R0	;CHECK FWD OR RWD
+		MOV.B	@R0,R0
+		TST	#B'10000,R0	;IF FWD FLG SET 
+		BT	VF_FORWARD	;THEN NOT NEGATIVE FRUN
+		NEG	R1,R1		;ELSE NEGATIVE FRUN
+                BRA     VF_FORWARD
+                NOP
+
+                .ALIGN 4
+FRUN21:         .DATA.L FRUN
+SYSFLG8:        .DATA.L SYSFLG
+                        
+VF_FORWARD:
+                MOV     MAXCTA,R2
+		MULS	R1,R2		;DELTA SETA=FRUN*1440
+		STS	MACL,R3
+		MOV	S1000,R4
+
+                MOV     VSTATUS1,R0     ;3KPWM
+                MOV.B   @R0,R0
+                TST     #B'100,R0
+                BF      SAMPL1
+                MOV     S3000,R4
+SAMPL1:
+
+                MOV     R3,R5
+                DIVSN   R4,R5           ;SCALE DOWN DELTA SETA WITH 1000
+                MOV     R5,R3           ;DIVSN CAN'T USE R1 AND R3
+		MOV	SETA,R11
+		MOV	@R11,R11	;GET SETA
+                MOV     #100,R4          ;SCALE UP SETA WITH 100
+		MULS	R4,R11
+		STS	MACL,R11
+		ADD	R3,R11		;ADD SETA*100 WITH DELTA SETA
+		MOV	REMAIN,R7
+		MOV	@R7,R8
+		CMP/GE	R4,R8		;IF REMAINDER < 100
+		BF	NOT_ADD		;THEN NOT ADD REMAINDER
+		ADD	R4,R11		;ELSE ADD SETA WITH 100
+		SUB	R4,R8		;SUBTRACT 100 FROM REMAINDER
+		MOV	R8,@R7		;STORE REMAINDER	
+NOT_ADD:
+                MOV     #100,R4
+		MOV	R11,R5
+		DIVS	R4,R11		;SCALE DOWN SETA WITH 100
+		MOV	SETA,R0		;STORE SETA
+		MOV	R11,@R0
+                MOV     #100,R4
+		MULS	R4,R11
+		STS	MACL,R6
+		SUB	R6,R5		;FIND REMAINDER FROM DIVIDER
+		MOV	@R7,R8
+		ADD	R5,R8		;ADD REMAINDER TO OLD REMAINDER
+		MOV	R8,@R7		;STORE NEW REMAINDER
+
+;---------CHECK SETA NOT OVER +/-1440--------------------------------
+		MOV	MAXCTA,R2		;R2=1440
+		MOV	MINCTA,R3		;R3=-1440
+
+		MOV	SETA,R0
+		MOV	@R0,R1
+
+		MOV	R1,R4
+		SHAL	R4
+		BT	NEGCHK_VF
+
+POSITIVE_VF:
+		CMP/GE  R2,R1
+		BF	FXANG_VF
+		SUB 	R2,R1
+		BRA	POSITIVE_VF
+		NOP
+                .ALIGN 4
+MAXCTA:         .DATA.L 1440
+MINCTA:         .DATA.L -1440
+S1000:          .DATA.L 1000
+S3000:          .DATA.L 3000
+                .ALIGN 4
+NEGCHK_VF:
+		ADD	R2,R1
+		MOV	R1,R3
+		SHAL	R3
+		BT	NEGCHK_VF
+FXANG_VF:		
+		MOV	SETA,R0
+		MOV	R1,@R0		;KEEP SETA = ROTOR FLUX ANGLE
+
+                MOV     RETURNPWM,R14   ;3KPWM
+                JMP     @R14;RETURN_PWM
+                NOP
+
+;               MOV     R1,R0           ;SEND SETA TO PWM
+;------------------------------------------------------------------------
+V_F:                                    ;3KPWM
+                BRA     TO_CAL_I        ;GO TO READ IU,IV AND TRANSFORM TO ID,IQ
+		NOP			;READ CURRENT FOR CHECK STALL CURRENT
+VF_CONTINUE1:
+		MOV	SETA,R0
+		MOV	@R0,R0		;SEND SETA TO PWM
+		MOV	VREF,R1	
+		MOV	T_BOOST1,R4
+		MOV.W	@R4,R4
+		MULS	R1,R4
+		STS	MACL,R5
+		MOV	#100,R6
+		DIVS	R6,R5		;R5=VQ(0)=(%T_BOOST*VREF)/100
+		MOV	R5,R6
+		SUB	R5,R1
+                MOV     FRUN2_,R2
+		MOV.W	@R2,R2
+
+                MOV     DEL_FREQ1,R12    ;3KPWM
+                MOV.W   @R12,R12
+                ADD     R12,R2
+;                ADD     R12,R2          ;SLIP COMPENSATE
+
+                MOV     R2,R3
+		MULS	R1,R2		
+		STS	MACL,R1
+		MOV	FMAX_,R2
+		MOV.W	@R2,R2
+		CMP/GT	R2,R3
+		BT	VQ_EQ_VREF
+		DIVS	R2,R1		
+		ADD	R6,R1		;VQ=((VREF-VQ(0))/FMAX)*FRUN+VQ(0)
+		MOV	R1,R2
+                MOV     VQCOM1,R2       ;3KPWM
+                MOV     R1,@R2
+                BRA     VD_SET
+		NOP
+
+        .ALIGN 4
+T_BOOST1:       .DATA.L _T_BOOST        ;% TORQUE BOOST
+RETURNPWM:      .DATA.L RETURN_PWM
+DEL_FREQ1:      .DATA.L _DEL_FREQ
+FMAX_:          .DATA.L _F_MAX          ;MAXIMUM FREQUENCY
+FRUN2_:         .DATA.L FRUN
+        .ALIGN 4
+
+VQ_EQ_VREF:
+		MOV	VREF,R2			
+                MOV     VQCOM1,R1       ;3KPWM
+                MOV     R2,@R1
+VD_SET:
+                MOV     #0,R1
+                MOV     VDCOM1,R2       ;3KPWM
+                MOV     R1,@R2
+
+                MOV     V_DC1,R10
+                MOV     @R10,R5         ;R5 = READ VDC FOR DC LINK COMPENSATE
+;                MOV     VDC2,R5
+
+                MOV     DTIMENEW,R10
+		JSR	@R10			;JUMP TO DEAD_TIME COMPENSATE
+		NOP				;MODULE
+
+                MOV     D_FACTOR,R0            ;FACTOR OF DEADTIME COMP. (ACTIVE OR NOT)
+                MOV.B   @R0,R0
+                MULS    R0,R3
+                STS     MACL,R3
+                MULS    R0,R4
+                STS     MACL,R4
+
+                MOV     UCX12,R0
+		MOV	R3,@R0			;KEEP UCX
+                MOV     UCY12,R0
+                MOV     R4,@R0                  ;KEEP UCY
+
+;FLYING-------BEGIN-----------------------------------------
+;FLYINGC
+MOV VQCOM1,R2
+MOV @R2,R2
+;FLYINGC
+                MOV VSTATUS1,R5
+                MOV.B @R5,R5
+                MOV #B'100000,R8
+                TST R8,R5                       ;IF SEARCHING SPEED FLG NOT SET
+                BT  NOT_SEARCH                  ;THEN NOT_SEARCH
+                MOV #10,R5                      ;ELSE DRIVE OUTPUT VOLT ONLY 10%
+                DIVS R5,R2
+;FLYINGC
+MOV VQCOM1,R5
+MOV R2,@R5
+;FLYINGC
+                BRA SEARCH_END
+                NOP
+NOT_SEARCH:
+                MOV VSTATUS1,R5
+                MOV.B @R5,R5
+                MOV #B'1000000,R8
+                TST R8,R5                       ;IF WEIGHTING FLG NOT SET
+                BT  SEARCH_END                  ;THEN SEARCH END
+                MOV WEIGHT,R5                   ;ELSE MULTIPLY OUTPUT VOLT
+                MOV.W @R5,R5                    ;WITH WEIGHT
+                MULS R5,R2
+                STS MACL,R2
+                MOV Q30000,R8
+                DIVS R8,R2
+;FLYINGC
+MOV VQCOM1,R8
+MOV R2,@R8
+;FLYINGC
+SEARCH_END:
+;FLYING-------END-------------------------------------------
+
+;3KPWM
+;                MOV     V_DC1,R10
+;                MOV     @R10,R3         ;R3 = READ VDC FOR DC LINK COMPENSATE
+;		MOV	VDC2,R3
+  		
+;                MOV     SETA12,R10
+;                MOV     @R10,R0                 ;R0 = ROTOR FLUX ANGLE
+
+;                MOV     UCX12,R10
+;                MOV     @R10,R12                ;R12 = UCX
+
+;                MOV     UCY12,R10
+;                MOV     @R10,R13                ;R13 = UCY
+
+;                MOV     D_FACTOR,R10            ;FACTOR OF DEADTIME COMP. (ACTIVE OR NOT)
+;                MOV.B   @R10,R10
+;                MULS    R10,R12
+;                STS     MACL,R12
+;                MULS    R10,R13
+;                STS     MACL,R13
+
+;                MOV     #0,R12
+;                MOV     #0,R13
+
+;                BRA     PWMGEN1
+;                NOP
+;3KPWM
+
+P_W_M:
+
+                MOV     VSTATUS1,R1              ;3KPWM
+                MOV.B   @R1,R0
+                OR      #B'10,R0                 ;SET FLG UPDATE VD,VQ,ETC.
+                MOV.B   R0,@R1
+
+                BRA     MONITOR
+                NOP
+
+;                MOV     PWMGEN,R14
+;                JSR     @R14;PWM_GEN
+;                NOP                             ;GENERATING PWM SIGNAL
+
+;        	BSR     T_PRO
+;		NOP				; SQUARE WAVE COMMAND 
+
+;**************************************************************************
+;
+;	$$$$$$$$$$$	MONITOR SIGNAL SECTION     $$$$$$$$$$$
+;
+;**************************************************************************
+MONITOR:
+		MOV	ID_EST,R0
+		MOV	@R0,R1
+		MOV	IQ_EST,R0
+		MOV	@R0,R2
+		MOV	SETA,R0
+		MOV	@R0,R0
+                MOV     DQ3,R10
+		JSR	@R10;DQ_3PHS
+		NOP	
+
+		MOV	ID_EST,R0
+		MOV	@R0,R1
+		
+		MOV	IQ_EST,R0
+		MOV	@R0,R2
+		MOV	R2,R1
+
+                MOV     VDCOM1,R0
+		MOV	@R0,R1
+	
+                MOV     VQCOM1,R0
+		MOV	@R0,R1
+
+		MOV	IQ_REAL2,R4
+		MOV	@R4,R1
+MOV #0,R1
+                MOV     G1,R2
+                MULS    R1,R2
+                STS     MACL,R1
+                MOV     FSC_SP,R2
+                DIVS    R2,R1
+                NEG     R1,R1
+		MOV	MASK_8,R11
+		AND	R11,R1
+
+		MOV	ID_REAL2,R3
+		MOV	@R3,R10
+MOV #0,R10
+                MOV     G1,R2
+                MULS    R10,R2
+                STS     MACL,R10
+                MOV     FSC1,R2
+                DIVS    R2,R10
+                NEG     R10,R10
+		MOV	MASK_8,R11
+		AND	R11,R10
+		SHLL8	R10
+                OR      R1,R10
+	        BSR     OUT_DA
+                NOP
+JMP_LOOP1:
+		MOV	LOOP_1,R10
+		JSR	@R10
+		NOP
+
+         	MOV    LOOP_,R10
+                JSR    @R10;LOOP
+                NOP
+
+                MOV  INP_HI,R1
+        	MOV.B @R1,R0
+	        TST  #B'10000,R0	;IF RST SIGNAL HIGH
+		BF   NO_RST		;THEN NOT RESET TRIP
+
+            MOV SYSFLG81,R1             ;ELSE CHK TRIP MODE
+	    MOV.B @R1,R0
+            TST #B'1000,R0		;IF NOT TRIP MODE
+	    BT  NO_RST			;THEN NOT RESET TRIP
+;FLYINGA
+MOV PBD_HI,R1
+MOV.B @R1,R0
+TST #B'1000000,R0                       ;IF MAG OFF
+BF  NO_RST                              ;THEN NO_RST
+
+            MOV SYSFLG81,R1
+            MOV.B @R1,R0
+;FLYINGA
+
+            AND #B'11010010,R0          ;ELSE CLEAR TRIP MODE FLAG
+	    MOV.B R0,@R1		;SET STOP AND BLINK MODE FLAG
+
+            MOV D_BUF,R1
+            ADD #4,R1
+            MOV.B @R1,R0
+            AND #B'10111111,R0        ;TURN OFF RUN-LED
+            OR  #B'00100000,R0        ;ON STOP-LED
+            MOV.B R0,@R1
+
+;            MOV PADR_L,R1               ;RESET PA1(CLEAR FUALT CONTACT)
+;            MOV.B @R1,R0               ;EXT ROM
+;            OR  #B'00000010,R0
+;            MOV.B R0,@R1
+
+            MOV PBDR_L,R1               ;RESET PA1(CLEAR FUALT CONTACT)
+	    MOV.B @R1,R0		;INT ROM		
+	    OR  #B'00000010,R0
+            MOV.B R0,@R1
+
+            MOV RE_COUNT,R1             ;RESET COUNTER OF AUTO-RESTART
+	    MOV #0,R0			;IN CASE OF SELECT AUTO-RESTART 
+            MOV R0,@R1                  ;BUT RESET SIGNAL IN BEFORE TIME FINISH
+
+            MOV INCREA,R1
+	    MOV R0,@R1
+	    MOV INCREA2,R1
+	    MOV R0,@R1
+	    MOV INCREA3,R1
+	    MOV R0,@R1
+	    MOV MSEC10,R1
+	    MOV R0,@R1
+	    MOV MSEC102,R1
+	    MOV R0,@R1
+	    MOV MSEC103,R1
+	    MOV R0,@R1
+	    MOV D_INCREA,R1
+	    MOV R0,@R1
+	    MOV D_INCREA2,R1
+	    MOV R0,@R1
+	    MOV D_INCREA3,R1
+	    MOV R0,@R1
+	    MOV D_MSEC10,R1
+	    MOV R0,@R1
+	    MOV D_MSEC102,R1
+	    MOV R0,@R1
+	    MOV D_MSEC103,R1
+            MOV R0,@R1
+
+        MOV BRK_C_STR1,R1                ;CLEAR BREAK STR COUNTER
+        MOV #0,R0
+        MOV.W R0,@R1
+
+NO_RST:
+;EXT ROM
+;                MOV     FLGSYS,R1
+;                MOV.B   @R1,R0
+;                TST     #B'100,R0
+;                BT      NO_OC            ;STOP MODE  NOT CHK OC
+
+;                MOV     PSTATUS1,R1
+;                MOV.B   @R1,R0
+;                TST     #B'10000,R0
+;                BF      NO_OC            ;FRIST RUN NOT CHK OC
+
+;                MOV     TSTATUS1,R1
+;                MOV.B   @R1,R0
+;                TST     #B'100000,R0
+;                BF      NO_OC            ;V/F & SSL < STRFREQ. NOT CHK OC
+
+;                MOV     USTATUS,R1
+;                MOV.B   @R1,R0
+;                TST     #B'10,R0
+;                BF      NO_OC            ;FREE RUN NOT CHK OC
+
+;                MOV     RSTATUS1,R1
+;                MOV.B   @R1,R0
+;                TST     #B'1000,R0
+;                BF      NO_OC            ;NO_FW_RW SIGNAL NOT CHK OC
+		
+;BRA OUT_IMIA3
+;NOP
+;                MOV     PA_HI,R0
+;                MOV.B   @R0,R0
+;                TST     #B'01000000,R0
+;                BF      NO_OC   ;CHECK OC ONLY
+
+;                MOV TIP_TYP0,R0
+;                MOV #0,R1
+;                MOV.B R1,@R0
+;                BSR TRIP_MODE
+;                NOP
+;                BRA OUT_IMIA3
+;                NOP
+;NO_OC:
+;BRA OUT_IMIA3
+;NOP
+;BRA NO_OH
+;NOP
+;                MOV  INP_HI,R1
+;                MOV.B @R1,R0
+;                TST  #B'1000,R0
+;                BT   NO_OH
+;INT ROM
+;CHK_OH
+                MOV TIP_TYP0,R1
+                MOV.B @R1,R0
+CMP/EQ #4,R0
+BT NO_OH
+
+                MOV VSTATUS1,R1
+                MOV.B @R1,R0
+                TST #B'1,R0             ;IF STOP MODE DON'T CHECK OH HERE
+                BF  NO_OH               ;BUT WILL CHECK IN STP MODE
+
+                MOV PAHI,R1
+		MOV.B @R1,R0
+		TST #B'1000000,R0
+		BF  NO_OH
+		MOV OHCOUNT,R1
+		MOV.B @R1,R0
+		ADD #1,R0
+		MOV.B R0,@R1
+                MOV #100,R2             ;OC => OH WHEN TIME OVER 0.1 S.
+                CMP/GE R2,R0
+		BF  NO_OH
+                MOV.B R2,@R1
+
+;                MOV IPRA_,R1
+;                MOV #0,R0
+;                MOV.W R0,@R1
+
+;               MOV PAHI,R1
+;		MOV.B @R1,R0
+;		AND #B'01111111,R0
+;		MOV.B R0,@R1
+;		MOV CS1,R1
+;		MOV R1,@R1
+		BSR OFF_PNP
+		NOP
+
+                MOV TIP_TYP0,R1
+                MOV.B @R1,R0
+                MOV #1,R0
+                MOV.B R0,@R1
+		BSR TRIP_MODE
+		NOP
+                BRA OUT_IMIA3
+		NOP
+
+                .ALIGN 4
+SETA:           .DATA.L _SETA
+REMAIN:         .DATA.L _REMAIN
+VREF:           .DATA.L 1759
+VSTATUS1:       .DATA.L _V_STATUS
+VDCOM1:         .DATA.L _VD_COM
+VQCOM1:         .DATA.L _VQ_COM
+BRK_C_STR1:     .DATA.L _BRK_COUNT
+WEIGHT:         .DATA.L _WEIGHT
+Q30000:         .DATA.L 30000
+V_DC1:          .DATA.L _V_DC
+DTIMENEW:       .DATA.L DTIME_NEW
+UCX12:          .DATA.L _UCX
+UCY12:          .DATA.L _UCY
+D_FACTOR:       .DATA.L _D_FACTOR
+G1:             .DATA.L 127
+FSC_SP:         .DATA.L 11489
+MASK_8:         .DATA.L 255
+FSC1:           .DATA.L 1328
+D_BUF:          .DATA.L _DATA_BUF
+INCREA:         .DATA.L INCREA_
+INCREA2:        .DATA.L INCREA2_
+INCREA3:        .DATA.L INCREA3_
+MSEC10:         .DATA.L MSEC10_
+MSEC102:        .DATA.L MSEC102_
+MSEC103:        .DATA.L MSEC103_
+D_INCREA:       .DATA.L D_INCREA_
+D_INCREA2:      .DATA.L D_INCREA2_
+D_INCREA3:      .DATA.L D_INCREA3_
+D_MSEC10:       .DATA.L D_MSEC10_
+D_MSEC102:      .DATA.L D_MSEC102_
+D_MSEC103:      .DATA.L D_MSEC103_
+OHCOUNT:        .DATA.L _OH_COUNT
+LOOP_:          .DATA.L LOOP
+LOOP_1:         .DATA.L LOOP1
+DQ3:            .DATA.L DQ_3PHS
+ID_EST:         .DATA.L _ID_EST
+IQ_EST:         .DATA.L _IQ_EST
+IQ_REAL2:       .DATA.L _IQ_REAL
+PBDR_L:         .DATA.L H'5FFFFC3
+PBD_HI:         .DATA.L H'5FFFFC2
+RE_COUNT:       .DATA.L _RE_COUNT
+
+                .ALIGN 4
+NO_OH:
+;CORRECT1---------------BEGIN-----------------------------
+                MOV PBD_HI1,R1
+                MOV.B @R1,R0
+                TST #B'1000000,R0       ;IF MAG OFF BY LU
+                BF  NO_OL1              ;THEN NO_OL1
+                MOV WSTATUS3,R1
+                MOV.B @R1,R0
+                TST #B'1000000,R0       ;IF FLG MAG ON NOT SET
+                BT  CHK_OL1             ;THEN CHK_OL1 NORMAL
+                MOV #100,R2             ;ELSE CHK DELAY
+                MOV DELAY_MAG,R1
+                MOV.B @R1,R0
+                CMP/GE R2,R0            ;IF DELAY >/= 100ms
+                BT  CLEAR_DELAY         ;THEN CLEAR_DELAY
+                ADD #1,R0               ;ELSE COUNT DELAY
+                MOV.B R0,@R1
+                BRA NO_OL1
+                NOP
+CLEAR_DELAY:
+                MOV #0,R0
+                MOV.B R0,@R1            ;CLEAR DELAY
+                MOV WSTATUS3,R1
+                MOV.B @R1,R0
+                AND #B'10111111,R0      ;CLEAR FLG ON MAG
+                MOV.B R0,@R1
+CHK_OL1:
+
+;CORRECT1----------------END------------------------------
+;CORRECT2----------------BEGIN----------------------------
+                MOV FLGSYS,R1
+                MOV.B @R1,R0
+                TST #B'100,R0           ;IF STOP MODE DON'T CHECK OL-1 HERE
+                BT  NO_OL1
+;CORRECT2----------------END-----------------------------
+                MOV  INP_HI,R1
+        	MOV.B @R1,R0
+	        TST  #B'1000000,R0
+                BT   NO_OL1             ;NC CONTACT (THR)
+
+;                MOV PAHI,R1
+;                MOV.B @R1,R0
+;                AND #B'01111111,R0
+;                MOV.B R0,@R1
+;                MOV CS1,R1
+;                MOV R1,@R1
+                BSR OFF_PNP
+                NOP
+
+		MOV TIP_TYP0,R0
+	        MOV #2,R1
+	        MOV.B R1,@R0
+		BSR TRIP_MODE
+		NOP
+		BRA OUT_IMIA3
+		NOP
+
+NO_OL1:
+;	        MOV  CHK_OL2,R0
+;	        AND  R1,R0
+;		CMP/EQ #0,R0
+;	        BT NO_OL2
+		
+		MOV SUMOL,R0
+		MOV @R0,R0
+		MOV OL2REF,R1
+		CMP/GT R1,R0
+		BF  NO_OL2
+	
+;                MOV PAHI,R1
+;                MOV.B @R1,R0
+;                AND #B'01111111,R0
+;                MOV.B R0,@R1
+;                MOV CS1,R1
+;                MOV R1,@R1
+                BSR OFF_PNP
+                NOP
+
+		MOV TIP_TYP0,R0
+	        MOV #3,R1
+	        MOV.B R1,@R0
+		BSR TRIP_MODE
+		NOP
+		BRA OUT_IMIA3
+		NOP
+NO_OL2:
+;BRA NO_OU
+;NOP
+;CORRECT2-----------------BEGIN---------------------
+MOV TIP_TYP0,R1
+MOV.B @R1,R0
+CMP/EQ #2,R0
+BT  OL1_BEFORE
+;CORRECT2------------------END----------------------
+                MOV FLGSYS,R1
+                MOV.B @R1,R0
+                TST #B'100,R0           ;IF STOP MODE DON'T CHECK LU HERE
+                BT  NO_LU               ;BUT WILL CHECK IN STP MODE
+OL1_BEFORE:                             ;CORRECT2
+                MOV V_DCI,R0
+                MOV @R0,R1
+MOV RSTATUS1,R0
+MOV.B @R0,R0
+TST #B'10,R0
+BT LU_NORM
+MOV SYSFLG81,R0
+MOV.B @R0,R0
+TST #B'100,R0
+BT LU_NORM
+MOV LU_AUTO,R0
+BRA CMP_LU
+NOP
+LU_NORM:
+                MOV LU_REF,R0
+CMP_LU:
+                CMP/GT R0,R1
+		BT  NO_LU
+MOV PSTATUS1,R0
+MOV.B @R0,R0
+TST #B'10000000,R0
+BF NO_LU
+
+;                MOV PAHI,R1
+;                MOV.B @R1,R0
+;                AND #B'01111111,R0
+;                MOV.B R0,@R1
+;                MOV CS1,R1
+;                MOV R1,@R1
+                BSR OFF_PNP
+                NOP
+
+		MOV TIP_TYP0,R0
+		MOV #4,R1
+		MOV.B R1,@R0
+		BSR TRIP_MODE
+		NOP
+;FLYINGA
+        MOV TSTATUS1,R1
+        MOV.B @R1,R0
+        TST #B'10,R0
+        BF  OUT_NA_JA
+        OR  #B'10,R0
+        MOV.B R0,@R1
+
+MOV FRUN_2,R1
+MOV.W @R1,R10
+MOV #0,R0
+CMP/EQ R0,R10           ;IF FRUN=0
+BT  NOT_STORE           ;THEN NOT STORE TO FTEMP(PROTECT CASE OF LU & PRESS FN)
+MOV FTEMP,R1
+MOV.W R10,@R1
+MOV #116,R11            ;WRITE FTEMP TO EEPROM FOR SEARCH SPEED
+MOV EEWRITE1,R14
+JSR @R14;EE_WR
+NOP
+
+MOV TCSR,R1
+MOV TCNT_DAT,R10        ;CLEAR WATCHDOG(SINCE WRITE EEPROM 2TIMES CONTINUE)
+MOV.W R10,@R1
+NOT_STORE:
+;FLYINGA
+
+;        MOV TSTATUS1,R1
+;        MOV.B @R1,R0
+;        TST #B'10,R0
+;        BF  OUT_NA_JA
+;        OR  #B'10,R0
+;        MOV.B R0,@R1
+        MOV FLAST1,R1
+        MOV.W @R1,R10
+        MOV #104,R11            ;WRITE FLAST WHEN PRESS SET KEY 2 TIMES
+        MOV EEWRITE1,R14        ;IN RUN MODE TO EEPROM
+	JSR @R14;EE_WR
+	NOP
+OUT_NA_JA:
+
+                BRA OUT_IMIA3
+		NOP
+NO_LU:
+                MOV V_DCI,R0
+		MOV @R0,R0
+                MOV SERIES,R1           ;CHECK INVERTER 220V OR 380 V.
+                MOV.B @R1,R1
+                MOV #80,R2
+                CMP/GT R2,R1
+                BT  INV220
+                MOV OU_REF,R1
+                BRA INV380
+                NOP
+INV220:
+                MOV OU_220,R1
+INV380:
+                CMP/GE R1,R0
+		BF  NO_OU
+MOV PSTATUS1,R0
+MOV.B @R0,R0
+TST #B'10000000,R0
+BF NO_OU
+
+;                MOV PAHI,R1
+;                MOV.B @R1,R0
+;                AND #B'01111111,R0
+;                MOV.B R0,@R1
+;                MOV CS1,R1
+;                MOV R1,@R1
+                BSR OFF_PNP
+                NOP
+
+		MOV TIP_TYP0,R0
+		MOV #5,R1
+		MOV.B R1,@R0
+		BSR TRIP_MODE
+		NOP
+		BRA OUT_IMIA3
+		NOP
+
+NO_OU:		
+                MOV CL_COUNT,R0
+		MOV @R0,R0
+		MOV CL_TIME,R1
+		MOV @R1,R1
+		CMP/GT R1,R0
+		BF  NO_CL
+        
+;                MOV PAHI,R1
+;                MOV.B @R1,R0
+;                AND #B'01111111,R0
+;                MOV.B R0,@R1
+;                MOV CS1,R1
+;                MOV R1,@R1
+                BSR OFF_PNP
+                NOP
+
+		MOV TIP_TYP0,R0
+	        MOV #6,R1
+	        MOV.B R1,@R0
+		BSR TRIP_MODE
+		NOP
+		BRA OUT_IMIA3
+		NOP
+NO_CL:
+                MOV     TIP_TYP0,R1
+                MOV.B   @R1,R0
+                CMP/EQ  #15,R0
+                BF      NO_PL
+                BSR OFF_PNP
+                NOP
+		BSR TRIP_MODE
+		NOP
+		BRA OUT_IMIA3
+                NOP
+
+NO_PL:
+                MOV  IINV,R1;IMOTOR3,R1
+                MOV  @R1,R0
+                SHAL R0
+                MOV  AMP3,R1
+                MOV  @R1,R1
+                MOV  #10,R2
+                MULS R2,R1
+                STS  MACL,R1
+                CMP/GE R0,R1
+                BT   OC_TIP;NO_DOUBLE
+MOV R0,R2
+MOV SYSFLG81,R3
+MOV.B @R3,R0
+TST #B'100,R0
+BT NO_DOUBLE
+MOV RSTATUS1,R0
+MOV.B @R0,R0
+TST #B'1000,R0                  ;IF RUN MODE BUT NO_FWD,REW SIGNAL
+BF  NO_DOUBLE                   ;THEN NOT CHECK NO OUTPUT
+TST #B'100000,R0
+BF NO_DOUBLE
+MOV NO_OP,R4
+MOV.W @R4,R0
+MOV D500,R5
+CMP/EQ R5,R0
+BT CHK_I
+ADD #1,R0
+MOV.W R0,@R4
+BRA NO_DOUBLE
+NOP
+CHK_I:
+ADD #1,R3
+MOV.B @R3,R0
+TST #B'100,R0
+BF NO_DOUBLE
+TST #B'10,R0
+BT CHK_II
+MOV FRUN2,R0
+MOV.W @R0,R0
+CMP/EQ #0,R0
+BT NO_DOUBLE
+CHK_II:
+MOV R2,R0
+                MOV  #20,R2
+                DIVS R2,R0
+                CMP/GE R0,R1
+                BT   NO_DOUBLE
+;                MOV TIP_TYP0,R0
+;                MOV #14,R1
+;                MOV.B R1,@R0
+;                BRA  TIP_
+;                NOP
+BRA NO_DOUBLE
+NOP
+OC_TIP:
+                MOV VSTATUS5,R1
+                MOV.B @R1,R0
+                OR  #B'1000,R0            ;SET 2 TIMES TRIP OC FLAG
+                MOV.B R0,@R1
+                MOV TIP_TYP0,R0
+                MOV #0,R1
+                MOV.B R1,@R0
+TIP_:
+                BSR OFF_PNP
+                NOP
+                BSR TRIP_MODE
+                NOP
+                BRA OUT_IMIA3
+                NOP
+
+NO_DOUBLE:
+                MOV  INP_HI,R1
+        	MOV.B @R1,R0
+	        TST  #B'10000000,R0		;IF FR EXT. IN
+                BF   NO_FR1
+
+                MOV FRCOUNT,R1
+		MOV.B @R1,R0
+		ADD #1,R0
+		MOV.B R0,@R1
+                MOV #100,R2             ;DELAY TIME 100 ms. FOR DEBOUNCE
+                CMP/GE R2,R0            ;FREE RUN SIGNAL
+                BF  NO_FR
+                MOV.B R2,@R1
+
+;               MOV PAHI,R1                     ;THEN OFF PNP
+;		MOV.B @R1,R0
+;		AND #B'01111111,R0
+;		MOV.B R0,@R1
+;               MOV CS1,R1
+;		MOV R1,@R1
+		BSR OFF_PNP
+		NOP
+
+		MOV USTATUS,R1
+		MOV.B @R1,R0
+		OR #B'10,R0			;SET FREE RUN FLG.
+		MOV.B R0,@R1
+		MOV FRUN_2,R1
+		MOV #0,R0			;CLEAR FRUN
+		MOV.W R0,@R1
+		BRA OUT_IMIA3
+		NOP
+NO_FR1:
+                MOV FRCOUNT,R1                  ;CLEAR COUNTER WHEN
+                MOV #0,R0                       ;FR SIGNAL OUT
+                MOV.B R0,@R1
+
+NO_FR:
+		MOV USTATUS,R1
+		MOV.B @R1,R0
+		TST #B'10,R0			;IF FREE RUN FLG. NOT SET 
+		BT  OUT_IMIA3			;THEN OUT_IMIA3
+		AND #B'11111101,R0		;ELSE CLEAR FLG
+		MOV.B R0,@R1
+                MOV PBHI,R1
+		MOV.B @R1,R0
+		AND #B'01111111,R0
+                MOV.B R0,@R1
+OUT_IMIA3:
+
+;MOV PADRH,R1
+;MOV.B @R1,R0
+;AND #B'11111101,R0
+;MOV.B R0,@R1
+
+	        LDS.L   @SP+,PR
+	        RTS
+	        NOP
+;*******************************
+;SUBROUTINE FOR OFF PNP
+;*******************************
+OFF_PNP:
+        STS.L PR,@-SP                 
+;        MOV PAHI,R1
+;        MOV.B @R1,R0
+;        AND #B'01111111,R0
+;        MOV.B R0,@R1
+;        MOV CS1,R1
+;        MOV R1,@R1
+
+                MOV PBHI,R1
+		MOV.B @R1,R0
+		OR #B'10000000,R0
+                MOV.B R0,@R1
+
+        LDS.L @SP+,PR
+        RTS
+        NOP
+
+                .ALIGN 4
+;SETA:           .DATA.L _SETA
+;REMAIN:         .DATA.L _REMAIN
+;T_BOOST1:       .DATA.L _T_BOOST        ;% TORQUE BOOST
+ID_REAL2:       .DATA.L _ID_REAL
+FRUN2:          .DATA.L FRUN
+D500:           .DATA.L 500
+SYSFLG81:       .DATA.L SYSFLG
+WO:             .DATA.L _WO
+VD_COM:         .DATA.L _VD_COM
+PWMGEN:		.DATA.L PWM_GEN
+SETA_0:		.DATA.L _SETA_0
+IU_REAL:	.DATA.L _IU_REAL
+MOR_OFF1:	.DATA.L 9		;FOR CHANEL 1
+MOR_OFF2:	.DATA.L 5		;FOR CHANEL 2
+WSL:		.DATA.L _WSL
+WMD:		.DATA.L _WM
+;PARAMETER SETTING
+IQ_COM:		.DATA.L _IQ_COM
+IMR_EST:	.DATA.L _IMR_EST
+ID_ERR:		.DATA.L _ID_ERR
+IQ_ERR:		.DATA.L _IQ_ERR
+
+;PARAMETER SETTING
+;Rs:		.DATA.L 800		;0.7*1000
+;Ls:		.DATA.L 92		;0.092*1000
+;*;Rr:          .DATA.L 350             ;0.885*1000
+;*;Lr:          .DATA.L 820             ;0.120*1000
+;pLs:		.DATA.L 14		;(1-M^2/(LrLs))*Ls=Ls-M=131-120,M=Lr
+;RrM2Lr2:	.DATA.L 400		;0.5*M^2/Lr^2*1000
+;M2Lr:		.DATA.L 78		;0.083*1000
+
+IDQSCL1:	.DATA.L 1000		;ID AND IQ SCALING
+GAIN1:		.DATA.L 0		;pLs*H'1*1000
+GAIN4:		.DATA.L 0		;H'2*M/Lr*1000
+		.ALIGN 4
+TSTATUS1:       .DATA.L _T_STATUS
+RSTATUS1:	.DATA.L _R_STATUS
+VSTATUS5:       .DATA.L _V_STATUS
+SETA12:         .DATA.L _SETA
+INP_HI:         .DATA.L IN_PORT2
+F_OLD:          .DATA.L _F_OLD
+VQ_COM:         .DATA.L _VQ_COM
+VDC1:		.DATA.L 2489            ;220*SQRT(2)*2^3=2489.016
+DUTY:		.DATA.L 200
+FMAX:		.DATA.L 5000
+UCX:            .DATA.L _UCX
+UCY:		.DATA.L _UCY
+DEADTCOM:       .DATA.L DEADT_COM
+VDTEST:         .DATA.L 1759
+IU2:		.DATA.L _IU
+IV2:		.DATA.L _IV
+PA_HI:		.DATA.L H'5FFFFC0
+PBHI:           .DATA.L H'5FFFFC2
+INPORT0:        .DATA.L INPORT
+TIP_TYP0: 	.DATA.L TIP_TYP
+CHK_OH:   	.DATA.L B'00100000
+CHK_OL2:  	.DATA.L B'00010000
+AREA:		.DATA.L _VAR1
+PADRH:		.DATA.L H'5FFFFC0
+PSTATUS1:	.DATA.L _P_STATUS
+LU_REF:         .DATA.L 1408;1493;1665;((2640/2489)*1570);1570
+LU_AUTO:        .DATA.L 2489*40/100
+OU_REF:         .DATA.L 3695;((2640/2489)*3695);3919
+OL2REF:		.DATA.L 52428800
+OU_220:         .DATA.L 3200;(3200*(2640/2489));3395
+SERIES:         .DATA.L _SERIES
+PAHI:           .DATA.L H'5FFFFC0
+CS1:		.DATA.L H'1000000
+PADR_L:		.DATA.L H'5FFFFC1
+RE_TIME:        .DATA.L _RE_TIME
+SUMOL:		.DATA.L SUM_OL
+CL_COUNT:       .DATA.L _CL_COUNT
+CL_TIME:        .DATA.L _CL_TIME
+USTATUS:	.DATA.L _U_STATUS
+FRUN_2:		.DATA.L FRUN
+FLGSYS:		.DATA.L SYSFLG
+FRCOUNT:        .DATA.L _FR_COUNT
+IMOTOR3:        .DATA.L I_MOTOR
+AMP3:          .DATA.L  AMPERE
+FLAST1:         .DATA.L FLAST
+EEWRITE1:       .DATA.L EE_WR
+V_DCI:          .DATA.L _V_DCIN
+IINV:           .DATA.L I_INV
+NO_OP:          .DATA.L _NO_OP
+FTEMP:          .DATA.L _F_TEMP
+TCSR:           .DATA.L H'5FFFFB8
+TCNT_DAT:       .DATA.L H'5A00
+PBD_HI1:        .DATA.L H'5FFFFC2
+DELAY_MAG:      .DATA.L _DELAY_MAG
+WSTATUS3:       .DATA.L _W_STATUS
+        .ALIGN 4
+;*************************************************************************
+;			ROTOR FLUX ANGLE CALCULATION
+;	R1 = ROTOR POSITION
+;	R2 = WSL
+;*************************************************************************
+ROTOR:
+	        STS.L   PR,@-SP                 
+		MOV	ANGSL_0,R0
+		MOV	@R0,R10		;R10=ANGSL_0
+                ADD     R10,R7          ;R7 = ANGSL_0+dANGSL ,SCALE UP SETA
+                                        ;BY /dt : dSETA = WO*dt
+
+		MOV	MAXSETA1,R11	;R11=2pi/dt*2^6  (dt=500uS)
+		MOV	MINSETA1,R12	;R12=-2pi/dt*2^6
+
+                MOV     VSTATUS3,R8     ;3KPWM
+                MOV.B   @R8,R8
+                MOV     #B'100,R10
+                TST     R10,R8
+                BF      SAMPL_1M1
+                MOV     MAXSETA3,R11
+                MOV     MINSETA3,R12
+SAMPL_1M1:
+
+		MOV	R7,R8		;R8=R7=SETA
+		SHAL	R8		;CHECK THE SIGN BIT OF SETA
+		BT	NEGSETA1
+
+		CMP/GE	R11,R7
+		BF	OUTSETA1
+		SUB	R11,R7		;R7=SETA-MAXSETA
+		BRA	OUTSETA1
+		NOP
+
+NEGSETA1:		
+		CMP/GE	R12,R7
+		BT	OUTSETA1
+		SUB	R12,R7		;R7=SETA-MINSETA	
+
+OUTSETA1:
+		MOV	R7,@R0		;UPDATE SETA_0
+                MOV     SCAL2,R9        ;R9=2pi*2000/360*2^6
+
+                MOV     VSTATUS3,R8     ;3KPWM
+                MOV.B   @R8,R8
+                MOV     #B'100,R10
+                TST     R10,R8
+                BF      SAMPL_1M2
+                MOV     SCAL3,R9
+SAMPL_1M2:
+
+                DIVS    R9,R7           ;R7=SETA
+
+;		SHAR	R7
+;		SHAR	R7
+;		SHAR	R7
+;		SHAR	R7		;SCALE DOWN BY /2^4 (-1440 - +1440)
+
+	        LDS.L   @SP+,PR
+		RTS
+		NOP
+
+		.ALIGN 4
+ANGSL_0:	.DATA.L _ANGSL_0
+;_ANGSL_0:	.DATA.L 0
+MINSETA1:       .DATA.L -804248/2         ;
+MAXSETA1:	.DATA.L 804248/2       	;2pi/dt*2^6
+SCAL2:		.DATA.L 279		;2pi*1000/360*2^6=55834.9/2
+VSTATUS3:       .DATA.L _V_STATUS
+MINSETA3:       .DATA.L 3*-804248/2         ;
+MAXSETA3:       .DATA.L 3*804248/2        ;2pi/dt*2^6
+SCAL3:          .DATA.L 3*279
+                .ALIGN 4
+;********************************************************
+;  TEST STEP PROCEDURE
+;********************************************************
+T_PRO:	
+        STS.L   PR,@-SP                 
+;BRA XXX
+;NOP
+	MOV	COUNT,R1
+	MOV	@R1,R0
+	CMP/EQ	#0,R0
+	BF	D_C
+	MOV	ADD_SET,R4
+	MOV	@R4,R2
+	MOV	SWM1,R3
+	CMP/EQ	R2,R3
+	BF	SV1
+	MOV	SWM2,R3
+SV1:				;UPDATE NEW SET
+	MOV	R3,@R4
+	MOV	SCOUNT,R0
+D_C:	ADD	#-1,R0
+	MOV	R0,@R1
+        LDS.L   @SP+,PR
+	RTS
+	NOP
+XXX:	
+	MOV	ADD_SET,R4
+	MOV	ROUND1,R1
+	MOV	@R1,R0
+	CMP/EQ	#5,R0
+	BT	OUT_0HZ
+	MOV	SWM1,R3
+	MOV	R3,@R4
+        LDS.L   @SP+,PR
+        RTS
+	NOP
+
+OUT_0HZ:
+	MOV	#0,R0
+	MOV	R0,@R4
+	MOV	COUNT,R2
+	MOV	@R2,R0
+	CMP/EQ	#0,R0
+	BT	RST_ROUND
+	ADD	#-1,R0
+	MOV	R0,@R2
+        LDS.L   @SP+,PR
+	RTS
+	NOP
+
+RST_ROUND:
+	MOV	SCOUNT,R0
+	MOV	R0,@R2
+
+	MOV	#0,R0
+	MOV	R0,@R1
+
+        LDS.L   @SP+,PR
+	RTS
+	NOP
+
+;******************** VARIABLE AREA ******************************
+	.ALIGN 4
+COUNT:	.DATA.L	_COUNT
+ADD_SET:.DATA.L	SET_WM
+SWM1:   .DATA.L 10053	;1420 rpm=9517=1420/1500*2PI*50*64/2=1420*6.702(MECH)
+SWM2:   .DATA.L 0;-10053;0.5Hz = 0.5*30*6.702
+SCOUNT:	.DATA.L	180	;1 SEC.= 8000 LOOP
+ROUND1: .DATA.L ROUND
+
+;**********************************************************************
+; READ DC VOLTAGE
+; FULL SCALE 0-600 VOLTS. =  0-1800  (VDC OFFSET=20)
+; OUTPUT R6 = Vread * 8 /3  = Vin * 8
+;**********************************************************************
+READ_VDC:
+                                     
+        STS.L   PR,@-SP                 ;READ DC VOLTAGE
+        MOV     V_DC,R0
+        MOV     @R0,R1                  ;KEEP V_DC
+;       MOV     VDC_G1,R2
+	MOV	GDC,R2
+	MOV	@R2,R2
+        MULS    R1,R2
+        STS     MACL,R1
+        MOV     VDC_G2,R2
+        DIVS    R2,R1
+        MOV     V_DC_I,R2
+        MOV     R1,@R2
+        MOV     VDC_B,R2
+        CMP/GE  R1,R2
+        BF      SAVE_DC
+        MOV     VDC_B,R1
+SAVE_DC:MOV     R1,@R0
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+
+;*****************************
+; OUT DIGITAL TO ANALOG 2 CH
+; R10.W = DIGITAL OUT 8 BIT/CH
+;*****************************
+OUT_DA:
+        STS.L   PR,@-SP                 
+        MOV     R0,@-SP
+        MOV     R11,@-SP
+        
+        MOV     #15,R0
+        MOV     #0,R11
+
+        MOV     OSET,R11
+        ADD     R11,R10
+
+BL16:   ROTCR   R10
+        ROTCL   R11
+        ADD     #-1,R0
+        CMP/PZ  R0
+        BT      BL16
+;        MOV     CS3,R10
+;        MOV.W   R11,@R10
+
+        MOV     @SP+,R11
+        MOV     @SP+,R0
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+
+	.ALIGN	4
+V_DC:	.DATA.L	_V_DC
+VDC_G1:	.DATA.L 4580;4612
+VDC_G2:	.DATA.L 1000;1023		;290*3
+GDC:	.DATA.L _G_DC
+V_DC_I: .DATA.L _V_DCIN
+OSET:   .DATA.L H'7F7F
+;******************** CONSTANT AREA ******************************
+	.ALIGN  4
+MASK_AD:.DATA.L H'3FF
+MASK_12:.DATA.L	H'0FFF
+MASK_11:.DATA.L	H'07FF
+FFFF:   .DATA.L H'FFFF
+CS3:    .DATA.L H'B000000
+MSEC1:  .DATA.L MSEC
+UDC:	.DATA.L _V_DC
+VDC_B:  .DATA.L 990;1664;1569            ;196.125 V MIN
+;FLGSYS: .DATA.L SYSFLG
+;*****************************
+; OUT DIGITAL TO ANALOG 2 CH
+; R10.W = DIGITAL OUT 8 BIT/CH
+;*****************************
+TRIP_MODE:
+        STS.L   PR,@-SP                 
+        MOV PA_,R10
+        MOV.B @R10,R0
+;        AND #B'01111111,R0              ;INT ROM
+        OR #B'10000000,R0
+        MOV.B R0,@R10                   ;OFF SST
+
+        MOV DIGTOG,R1
+        MOV #4,R0
+        MOV.B R0,@R1
+;CORRECT1--------------BEGIN---------------------------
+        MOV #0,R0
+        MOV DELAY_MAG1,R1
+        MOV.B R0,@R1
+;CORRECT1---------------END----------------------------
+;        MOV BRK_C_STR,R1                ;CLEAR BREAK STR COUNTER
+;        MOV #0,R0
+;        MOV.W R0,@R1
+;SEQ_FLY1--------------BEGIN-----------------------------
+        MOV XSTATUS,R1
+        MOV.B @R1,R0
+        AND #B'11111110,R0
+        MOV.B R0,@R1
+;SEQ_FLY1---------------END------------------------------
+;FLYING----------------BEGIN------------------------------------------
+;CLEAR FLG & VARIABLE OF SEARCH SPEED WHEN TRIP
+;FLYINGA
+MOV WSTATUS2,R1
+MOV.B @R1,R0
+TST #B'1000,R0
+BT  NOT_CLEAR
+;FLYINGA
+        MOV #0,R0
+        MOV CLOCK2,R1
+        MOV R0,@R1
+        MOV S_COUNT,R1
+        MOV.W R0,@R1
+;FAST2-----------------BEGIN-------------------------
+        MOV T_COUNT,R1
+        MOV.W R0,@R1
+;FAST2-------------------END-------------------------
+        MOV S_TIMER,R1
+        MOV.W R0,@R1
+;SSL_FLY---------------BEGIN-------------------------
+        MOV COUNT_UP,R1
+        MOV.W R0,@R1
+        MOV INC_TIME2,R1
+        MOV P2000,R0
+        MOV.W R0,@R1
+;SSL_FLY----------------END--------------------------
+        MOV W3000,R0
+        MOV WEIGHT3,R1
+        MOV.W R0,@R1
+        MOV FBACK,R0
+        MOV.W @R0,R0
+        MOV FLAST2,R1
+        MOV.W R0,@R1
+
+        MOV WSTATUS2,R1
+        MOV.B @R1,R0
+        AND #B'11110101,R0      ;FLYINGA
+        MOV.B R0,@R1
+        TST #B'1,R0
+        BF  SEARCH_SELECT
+        MOV VSTATUS6,R1
+        MOV.B @R1,R0
+        AND #B'00001111,R0
+        MOV.B R0,@R1
+
+SEARCH_SELECT:
+        MOV VSTATUS6,R1
+        MOV.B @R1,R0
+        AND #B'00011111,R0
+        MOV.B R0,@R1
+NOT_CLEAR:                      ;FLYINGA
+;FLYING-----------------END-------------------------------------------
+
+        MOV SYSFLG2,R1
+	MOV.B @R1,R0
+	OR  #B'1000,R0
+        AND #B'11111000,R0
+	MOV.B R0,@R1
+
+        LDS.L   @SP+,PR
+        RTS
+        NOP
+
+	.ALIGN 4
+SYSFLG2:.DATA.L SYSFLG
+DIGTOG: .DATA.L _DIG_TOG
+PA_:    .DATA.L H'5FFFFC0
+BRK_C_STR: .DATA.L _BRK_COUNT
+WEIGHT3:   .DATA.L _WEIGHT
+WSTATUS2:  .DATA.L _W_STATUS
+CLOCK2:    .DATA.L _CLOCK
+S_COUNT:   .DATA.L _S_COUNT
+S_TIMER:   .DATA.L _S_TIMER
+W3000:     .DATA.L 3000
+FBACK:     .DATA.L _FBACK
+FLAST2:    .DATA.L FLAST
+VSTATUS6:  .DATA.L _V_STATUS
+T_COUNT:   .DATA.L _T_COUNT
+COUNT_UP:  .DATA.L _COUNT_UP
+INC_TIME2: .DATA.L _INC_TIME
+P2000:     .DATA.L 2000
+DELAY_MAG1:.DATA.L _DELAY_MAG
+XSTATUS:   .DATA.L _X_STATUS
+        .ALIGN 4
+;*************************
+;SENSORLESS VECTOR CONTROL
+;*************************
+SSL_SRT:
+;*******************************************************************
+;		GO TO SPEED IDENTIFICATION
+;
+;RESERVE REGISTER:
+;
+;		R1 = IQ_COM
+;		R2 = ID_ESTIAMTED
+;		R3 = IQ_ESTIMATED
+;		R4 = ID_COM
+;		R5 = IMR_ESTIMATED
+;
+;*******************************************************************
+		MOV	ID_REAL9,R0
+		MOV	@R0,R10
+		MOV	R2,R6			;R6 = ID_ESTIMATED
+		SUB	R10,R6			;R6 = ID_ERR
+		MOV	ID_ERR9,R0
+ 		MOV	R6,@R0			;KEEP ID_ERR
+
+		MOV	IQ_REAL9,R0
+		MOV	@R0,R10
+                MOV     IQ_EST9,R0
+		MOV	@R0,R7			;R7 = IQ_ESTIMATED(K-2)
+		SUB	R10,R7			;R7 = IQ_ERR
+		MOV	IQ_ERR9,R0
+		MOV	R7,@R0			;KEEP IQ_ERR
+
+                MOV     IMR_COM,R0
+                MOV     @R0,R5
+                MOV     Mutual9,R10
+                MOV.W   @R10,R10
+                MULS    R10,R5
+                STS     MACL,R1                 ;
+                SHAL    R1                      ;R1=p*M*IMR_EST=p|ROTORFLUX|*1000
+                MOV     IDQSC9,R9
+                DIVS    R9,R1
+
+                MULS    R7,R1                   ;R1=IQ_ERR*p|ROTORFLUX|*2^6
+                STS     MACL,R1
+
+                SHAR    R1
+                SHAR    R1
+                SHAR    R1
+                SHAR    R1
+                SHAR    R1
+                SHAR    R1
+
+                MOV     R7,R1
+
+                MOV     WM_COM9,R8
+                MOV     @R8,R8
+       MOV     R8,R9
+       SHAL    R9
+       BF      POS_WME9
+       SHAR    R9
+       NEG     R9,R9
+POS_WME9:
+       MOV     SYSFLG3,R4
+       ADD     #1,R4
+       MOV.B   @R4,R0
+       MOV     HZ5A,R5
+
+       TST     #B'10000,R0                          ;IF SYSFLG.8=0 USE LOW GAIN
+       BT      CHK_HIA9                        ;BEFORE JMP CHK_HI
+       ADD     #-100,R5                        ;ELSE IT HI , CHK 4.5 Hz
+       CMP/GT  R5,R9                           ;IF WM>4.5 Hz
+       BT      LOW_GA9                         ;CHANGE TO LOW GAIN
+       BRA     HI_GA9                          ;ELSE USE OLD(HI G)
+       NOP
+
+CHK_HIA9:CMP/GT  R5,R9                         ;IF WM<5 Hz CHANGE TO HIGH GAIN
+       BF      HI_GA9
+
+LOW_GA9:
+       AND     #B'11101111,R0
+       MOV.B   R0,@R4
+       MOV     ADT_KpL,R2                              ;R2=KP
+       MOV     ADT_TiL,R3                              ;R3=KI
+       BRA     PI_SUB9
+       NOP
+
+HI_GA9:
+       OR      #B'10000,R0
+       MOV.B   R0,@R4
+       MOV     ADT_KpH,R2                              ;R2=KP
+       MOV     ADT_TiH,R3                              ;R3=KI
+PI_SUB9:
+;                MOV     ADT_KpL,R2
+;                MOV     ADT_TiL,R3
+
+                MOV     KP_ADT,R2
+                MOV.W   @R2,R2
+                MOV     TI_ADT,R3
+                MOV.W   @R3,R3
+;SSL_FLY-----------------BEGIN--------------------------------
+                MOV     VSTATUS4,R0
+                MOV.B   @R0,R0
+                TST     #B'100000,R0
+                BF      REDUCE_GAIN
+REDUCE_GAIN:
+                MOV     #5,R10
+                DIVS    R10,R2
+                MOV     #5,R10
+                DIVS    R10,R3
+NOT_REDUCE:
+;SSL_FLY------------------END---------------------------------
+                MOV     ADPTCON,R10
+                JSR     @R10;ADPT_CON
+                NOP
+;IMPROVE4
+;************************
+;SPEED WEIGHTING PROCESS
+;************************
+		MOV	W_C_M,R2
+                MOV.W   @R2,R2
+		MOV	WM_COM9,R3
+		MOV	@R3,R3
+
+MOV R3,R0
+SHAL R0
+BF POSI1_
+NEG R3,R3
+POSI1_:
+
+                CMP/GT  R2,R3
+                BT      WM_EST_0_
+;		MOV	R3,R1
+		MOV	VAR,R3
+		MOV	#0,R2
+		MOV	R2,@R3
+WM_EST_0_:
+		MOV	R1,R2			;R2=WM_EST
+
+
+		MOV	WM_COM9,R0
+		MOV	@R0,R1
+
+
+		MOV	WGFUNC9,R10
+		JSR	@R10;WG_FUNC
+		NOP				
+
+		MOV	R2,R9			;R9 = WEIGHTED WM_EST : G*WM_EST
+
+		MOV	WM_COM9,R0
+		MOV	@R0,R1
+		MOV	R1,R2			
+
+		MOV	WGFUNC9,R10
+		JSR	@R10;WG_FUNC
+		NOP				;R2 = WEIGHTED WM_COM : G*WM_COM
+
+		MOV	WM_COM9,R0
+		MOV	@R0,R1
+		SUB	R2,R1			;R1 = (1-G)*WM_COM
+
+		ADD	R9,R1			;SUM OF WEIGHTED PARAMETERS	
+						;R1 = G*WM_EST+(1-G)*WM_COM
+;**************************
+; END OF WEIGHTING PROCESS
+;**************************
+
+;                MOV     WM_EST9,R0
+;                MOV     R1,@R0
+;IMPROVE4
+
+;BRA NO_WEIGHT
+;NOP
+;FLYING------------------BEGIN----------------------------
+;CORRECT1----------------BEGIN----------------------------
+;                MOV     WSTATUS1,R0
+;                MOV.B   @R0,R0
+;                TST     #B'100,R0       ;IF USE PURE SSL SEARCH
+;                BT      NO_WEIGHT       ;THEN NO_WEIGHT
+
+;                MOV     VSTATUS4,R0
+;                MOV.B   @R0,R0
+;                TST     #B'100000,R0    ;IF SEARCHING FLG SET
+;                BF      MIX_MODE1       ;THEN MIX_MODE1
+;                TST     #B'1000000,R0   ;ELSE WEIGHTED FLG SET
+;                BF      MIX_MODE1       ;THEN MIX_MODE1
+;                TST     #B'10000000,R0  ;ELSE TRANSFER TO SSL FLG NOT SET
+;                BT      NO_WEIGHT       ;THEN NO_WEIGHT
+;************************
+;SPEED WEIGHTING PROCESS
+;************************
+;MIX_MODE1:
+;                MOV     W1000,R2
+;                MOV     CLOCK1,R3
+;                MOV     @R3,R3
+
+;MOV R3,R0
+;SHAL R0
+;BF POSI1
+;NEG R3,R3
+;POSI1:
+
+;                CMP/GT  R2,R3
+;                BT      WM_EST_0
+
+;                MOV     VAR,R3
+;                MOV     #0,R2
+;                MOV     R2,@R3
+;WM_EST_0:
+;                MOV     R1,R2                   ;R2=WM_EST
+
+
+;                MOV     CLOCK1,R0
+;                MOV     @R0,R1
+
+
+;                MOV     WGFUNC91,R10
+;                JSR     @R10;WG_FUNC1
+;                NOP
+
+;                MOV     R2,R9                   ;R9 = WEIGHTED WM_EST : G*WM_EST
+
+;                MOV     CLOCK1,R0
+;                MOV     @R0,R1
+;                MOV     WM_COM9,R2
+;                MOV     @R2,R2
+
+;                MOV     WGFUNC91,R10
+;                JSR     @R10;WG_FUNC1
+;                NOP                             ;R2 = WEIGHTED WM_COM : G*WM_COM
+
+;                MOV     WM_COM9,R0
+;                MOV     @R0,R1
+;                SUB     R2,R1                   ;R1 = (1-G)*WM_COM
+
+;                ADD     R9,R1                   ;SUM OF WEIGHTED PARAMETERS
+						;R1 = G*WM_EST+(1-G)*WM_COM
+;CORRECT1----------------END-----------------------------------------------
+;**************************
+; END OF WEIGHTING PROCESS
+;**************************
+;FLYING-----------------------END------------------------------------------
+NO_WEIGHT:
+                MOV     WM_EST9,R0
+		MOV	R1,@R0
+
+;***********************************************************************
+;		ROTOR FLUX FREQUENCY AND ANGLE CALCULATION
+;			WO = pWM + Wsl
+;			p = POLE PAIRS
+;		       WM = ROTOR SPEED
+;	Wsl = Rr/Lr * IQ_ESTIMATED/IMR_ESTIMATED
+;	    - H'2/(M*IMR_ESTIMATED)*[IQ_ESTIMATED-IQ_REAL]
+;	     SETA = dSETA+SETA_0
+;		  = WO_kt*dt+[SUM{t=0->(k-1)t} WO_t*dt]
+;                 = 360*WO/(2*pi*Fs)+SETA_0
+;RESERVE REGISTER
+;		R1 = IQ_COM
+;		R2 = ID_ESTIAMTED
+;		R3 = IQ_ESTIMATED
+;		R4 = ID_COM
+;		R5 = IMR_ESTIMATED
+;*************************************************************************
+ROTOR_CAL9:
+		MOV	IQ_EST9,R0
+		MOV	@R0,R3
+		MOV	ROTC9,R6		;R6=Rr/Lr*2^6 =671	
+		MOV.W	@R6,R6
+		MULS	R6,R3		
+		STS	MACL,R7		;R7=Rr/Lr*IQ_ESITMATED*2^6
+
+		MOV	IQ_ERR9,R8	
+		MOV	@R8,R10		;R10=IQ_ESTIMATED-IQ_REAL
+		MOV	GAIN3_9,R9	;R9=H'2/M*2^6
+		MULS	R9,R10
+		STS	MACL,R11	;R11=H'2/M*[IQ_ESTIMATED-IQ_REAL]*2^6
+
+		SUB	R11,R7		;R7=Wsl*IMR_ESTIMATED*2^6
+		MOV	IMR_EST9,R0
+		MOV	@R0,R5
+
+		MOV	R5,R12
+	  	DIVS	R12,R7		;R7=Wsl
+
+		MOV	WSL1_9,R0
+;3KPWM
+;                MOV     @R0,R12         ;R12=Wsl_0
+                MOV     R7,@R0          ;KEEP Wsl
+
+;***********************************************************************
+;             CALCULATE ROTOR FLUX POSITION BY INTEGRATING
+;***********************************************************************
+		MOV	WM_EST9,R0       ;FOR SPEED SENSORLESS
+		MOV	@R0,R13
+		MOV	POLE9,R14
+		MOV.B	@R14,R14
+		SHAR    R14
+
+                SHAR    R13              ;FIELD WEAK
+                SHAR    R13
+
+                MULS    R13,R14
+                STS     MACL,R13        ;R13=pWM_EST
+
+                SHAL    R13             ;FIELD WEAK
+                SHAL    R13
+
+		ADD	R13,R7		;R7 = WO = pWM_EST+Wsl
+;3KPWM
+;                ADD     R13,R12         ;R12 = pWM_EST+Wsl_0
+
+                SHAR    R7              ;FIELD WEAK
+                SHAR    R7
+                SHAR    R7
+
+		MOV	MAXWO,R0
+		MOV	MINWO,R1
+		MOV	R7,R8
+		SHAL	R8
+		BT	NEG_WO9
+
+		CMP/GE	R0,R7
+		BF	KEEP_WO9
+		MOV	R0,R7		
+		BRA	KEEP_WO9
+		NOP	
+	
+NEG_WO9:	
+		CMP/GE	R1,R7	
+		BT	KEEP_WO9
+		MOV	R1,R7		
+
+KEEP_WO9:
+		MOV	WO9,R0
+		MOV	R7,@R0		;KEEP WO
+
+                MOV     TO_CALI,R14     ;3KPWM
+                JMP     @R14;TO_CAL_I
+                NOP
+
+SSL_SETA:
+
+                MOV     WSL0_9,R0
+                MOV     @R0,R7
+                MOV     WM_EST9,R0
+                MOV     @R0,R13
+                MOV     POLE9,R14
+                MOV.B   @R14,R14
+                SHAR    R14
+                SHAR    R13
+                SHAR    R13
+                MULS    R13,R14
+                STS     MACL,R13
+                SHAL    R13
+                SHAL    R13
+                ADD     R13,R7
+                MOV     WSL1_9,R0
+                MOV     @R0,R10
+                MOV     WSL0_9,R0
+                MOV     R10,@R0
+;                MOV     R12,R7          ;R7 =pWM_EST+Wsl_0
+;SSL_BREAK-----BEGIN-----------------------
+MOV RSTATUS4,R0
+MOV.B @R0,R0
+TST #B'100000,R0
+BT  NOT_SSL_BREAK
+MOV #0,R7
+;BRA ZERO_WO
+;NOP
+NOT_SSL_BREAK:
+;SSL_BREAK------END------------------------
+                MOV     SETA_09,R0
+		MOV	@R0,R10		;R10=SETA_0
+                ADD     R10,R7          ;R7 = SETA_0+dSETA ,SCALE UP SETA
+                                        ;BY /dt : dSETA = WO*dt
+
+		MOV	MAXSETA9,R11	;R11=2pi/dt*2^6  (dt=500uS)
+		MOV	MINSETA9,R12	;R12=-2pi/dt*2^6
+
+                MOV     VSTATUS4,R8     ;3KPWM
+                MOV.B   @R8,R8
+                MOV     #B'100,R10
+                TST     R10,R8
+                BF      SAMPL_1M3
+                MOV     MAXSETA39,R11
+                MOV     MINSETA39,R12
+SAMPL_1M3:
+
+		MOV	R7,R8		;R8=R7=SETA
+		SHAL	R8		;CHECK THE SIGN BIT OF SETA
+		BT	NEGSETA9
+		CMP/GE	R11,R7
+		BF	OUTSETA9
+		SUB	R11,R7		;R7=SETA-MAXSETA
+		BRA	OUTSETA9
+		NOP
+
+NEGSETA9:		
+		CMP/GE	R12,R7
+		BT	OUTSETA9
+		SUB	R12,R7		;R7=SETA-MINSETA	
+
+OUTSETA9:
+		MOV	R7,@R0		;KEEP SETA_0
+
+;*********************************
+;ROTOR FLUX POSITION COMPENSATION
+;*********************************
+                MOV     WM_EST9,R0
+		MOV	@R0,R1
+		MOV	R1,R2
+;                SHAL    R2              ;R2=pWM_EST
+                MOV     POLE9,R14
+		MOV.B	@R14,R14
+		SHAR	R14
+
+                SHAR    R2               ;FIELD WEAK
+                SHAR    R2
+
+                MULS    R2,R14
+                STS     MACL,R2        ;R13=pWM
+
+;                SHAL    R2              ;FIELD WEAK
+;                SHAL    R2
+
+;                SHAR    R2              ;FIELD WEAK
+;                SHAR    R2
+                SHAR    R2
+
+                MOV     #3,R1
+                MULS    R1,R2
+                STS     MACL,R2
+;               SHAR    R2              ;FIELD WEAK
+                SHAL    R2
+                SHAL    R2
+
+;                ADD     R1,R2           ;R2=1.5pWM_EST
+		
+		MOV	WSL9,R0
+		MOV	@R0,R3
+		SHAR	R3		;R3=Wsl/2
+
+		ADD	R2,R3		;R3=1.5pWM_EST+Wsl/2
+
+		ADD	R3,R7
+
+		MOV	MAXSETA9,R11	;R11=2pi/dt*2^6  (dt=500uS)
+		MOV	MINSETA9,R12	;R12=-2pi/dt*2^6
+
+                MOV     VSTATUS4,R8     ;3KPWM
+                MOV.B   @R8,R8
+                MOV     #B'100,R10
+                TST     R10,R8
+                BF      SAMPL_1M4
+                MOV     MAXSETA39,R11
+                MOV     MINSETA39,R12
+SAMPL_1M4:
+
+		MOV	R7,R8		;R8=R7=SETA
+		SHAL	R8		;CHECK THE SIGN BIT OF SETA
+		BT	NEGSETA29
+		CMP/GE	R11,R7
+		BF	OUTSETA29
+		SUB	R11,R7		;R7=SETA-MAXSETA
+		BRA	OUTSETA29
+		NOP
+
+NEGSETA29:		
+		CMP/GE	R12,R7
+		BT	OUTSETA29
+		SUB	R12,R7		;R7=SETA-MINSETA	
+
+OUTSETA29:
+
+                MOV     SCAL29,R9        ;R9=2pi*2000/360*2^4
+
+                MOV     VSTATUS4,R8      ;3KPWM
+                MOV.B   @R8,R8
+                MOV     #B'100,R10
+                TST     R10,R8
+                BF      SAMPL_1M5
+                MOV     SCAL39,R9
+SAMPL_1M5:
+
+                DIVS    R9,R7           ;R7=SETA*2^6
+
+;		SHAR	R7
+;		SHAR	R7
+;		SHAR	R7
+;		SHAR	R7		;SCALE DOWN BY /2^4
+
+		MOV	R7,R1
+;*************************
+;  V/F TEST
+;*************************
+;MOV SETA,R0
+;MOV @R0,R1
+;MOV T_VF,R7
+;MOV.B @R7,R7
+;ADD R7,R1
+;**************************
+
+                MOV     XSCAL19,R2               ;R2=1440
+ 		MOV	XSCAL39,R3		;R3=-1440
+
+		MOV	R1,R4
+		SHAL	R4
+		BT	NEGCHK9
+
+POSITIVE9:
+		CMP/GE  R2,R1
+		BF	FXANG9
+		SUB 	R2,R1
+		BRA	POSITIVE9
+		NOP
+
+NEGCHK9:  
+		ADD	R2,R1
+		MOV	R1,R3
+		SHAL	R3
+		BT	NEGCHK9
+
+FXANG9:		
+		MOV	SETA9,R0
+                MOV     R1,@R0          ;KEEP SETA = ROTOR FLUX ANGLE
+
+                MOV     PWM_RETURN,R14  ;3KPWM
+                JMP     @R14;RETURN_PWM
+                NOP
+
+;                MOV     TO_CALI,R14
+;                JMP     @R14;TO_CAL_I
+;                NOP
+
+                .ALIGN 4
+TO_CALI:        .DATA.L TO_CAL_I
+PWM_RETURN:     .DATA.L RETURN_PWM
+IMR_COM:        .DATA.L _ISD_RATED
+ID_REAL9:       .DATA.L _ID_REAL
+ID_ERR9:	.DATA.L _ID_ERR
+IQ_EST9:	.DATA.L _IQ_EST
+IQ_REAL9:	.DATA.L _IQ_REAL
+IQ_K_29:	.DATA.L _IQ_K_2
+IQ_ERR9:	.DATA.L _IQ_ERR
+IMR_EST9:	.DATA.L _IMR_EST
+;PARAMETER
+Mutual9:        .DATA.L _L_ROTOR;78             ;0.120*1000
+ROTC9:          .DATA.L R_L;328            ;Rr/Lr*2^6=0.6/0.076*2^6=472
+POLE9:		.DATA.L _POLE;2
+
+IDQSC9:        .DATA.L 1000            ;ID AND IQ SCALE
+WM_EST9:	.DATA.L _WM_EST
+WM9:		.DATA.L _WM
+GAIN3_9:        .DATA.L 0               ;H'2/M*2^6
+
+WSL1_9:		.DATA.L _WSL
+WSL0_9:         .DATA.L _WSL_0
+MAXWO:          .DATA.L 32765
+MINWO:		.DATA.L -32765
+WO9:		.DATA.L _WO
+SETA9:		.DATA.L _SETA
+SETA_09:	.DATA.L _SETA_0
+MINSETA9:       .DATA.L -804248/2         ;
+MAXSETA9:	.DATA.L 804248/2       	;2pi/dt*2^6
+MINSETA39:      .DATA.L 3*-804248/2         ;
+MAXSETA39:      .DATA.L 3*804248/2        ;2pi/dt*2^6
+
+WSL9:           .DATA.L _WSL
+SCAL29:		.DATA.L 279		;2pi*1000/360*2^4=279
+SCAL39:         .DATA.L 3*279
+XSCAL19:        .DATA.L 1440
+XSCAL39:	.DATA.L -1440
+ANGSL_09:	.DATA.L _ANGSL_0
+VSTATUS4:       .DATA.L _V_STATUS
+RSTATUS4:       .DATA.L _R_STATUS
+SYSFLG3:        .DATA.L SYSFLG
+ADT_KpL:        .DATA.L  8              ;Kp*2^4*3
+ADT_TiL:        .DATA.L  400;650            ;1/(Ki/4*DT)
+
+ADT_KpH:        .DATA.L  8              ;Kp*2^4*3
+ADT_TiH:        .DATA.L  400;1500;400             ;1/(Ki/4*DT)
+
+KP_ADT:         .DATA.L _KP_ADT
+TI_ADT:         .DATA.L _TI_ADT
+
+HZ5A:           .DATA.L 200;1005
+ADPTCON:	.DATA.L ADPT_CON
+
+WGFUNC9:        .DATA.L WG_FUNC
+;WGFUNC91:       .DATA.L WG_FUNC1
+W_C_M:          .DATA.L _MIN_BAND
+VAR:            .DATA.L _VAR
+WM_COM9:        .DATA.L SET_WM
+WSTATUS1:       .DATA.L _W_STATUS
+;W1000:          .DATA.L 0
+;CLOCK1:         .DATA.L _CLOCK
+
+        .INCLUDE "ADDRESS.H"
+	.END

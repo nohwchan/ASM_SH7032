@@ -1,0 +1,328 @@
+	.IMPORT SINCOS
+	.IMPORT	_ATANTAB
+	.EXPORT DQ_3PHS
+	.EXPORT DEADT_COM
+        .INCLUDE "MACRO.H"			        ;(MUL,DIV)
+	.INCLUDE "RAM_IMP.H"
+	.SECTION DEADTC,CODE,ALIGN=4
+
+;*************************************************************************
+;			DEAD TIME COMPENSATE 
+;
+;RESERVE REGISTER:
+;		R1 : IQ_EST
+;		R2 : SETA
+;               R5 : UDC
+;RETURN REGISTER:
+;		R3 : UCX
+;		R4 : UCY
+;**************************************************************************			
+DEADT_COM:
+		MOV	R11,@-SP
+		MOV	R9,@-SP
+		MOV	R8,@-SP
+		MOV	R7,@-SP
+		MOV	R0,@-SP
+                STS.L   PR,@-SP
+
+		MOV	MAXR1,R7
+		MOV	MINR1,R8
+
+		CMP/GT  R7,R1
+		BF	MINTEST
+		MOV	#0,R3
+		MOV	#0,R4
+		BRA	OUT_UCOM
+		NOP
+
+MINTEST:
+		CMP/GE	R8,R1
+		BT	ARC_TAN
+		MOV	#0,R3
+		MOV	#0,R4
+		BRA	OUT_UCOM
+		NOP
+
+ARC_TAN:
+		MOV	ATANTAB,R8		;SET ADDRESS OF ARCTAN_TABLE
+		MOV	R1,R7			;R7=IQ_EST WITH SIGN
+		SHAL	R7
+		BF	GOTO			;ABSOLUTE IQ_EST PROCESS
+		NEG	R1,R1			
+GOTO:		
+		MOV	#2,R9
+		MULS	R9,R1
+		STS	MACL,R0
+		MOV.W	@(R0,R8),R11		;READ ARCTAN(IQ_EST/ID) => R11
+		BF	OUT_SETADT
+		NEG	R11,R11			;FOR NEGATIVE IQ_EST
+OUT_SETADT:
+
+		ADD	R11,R2		        ;R2 = ANGLE OF STATOR CURRENT ON 
+					        ;STATOR FRAME
+		MOV	OFF_ANG,R0
+		ADD	R0,R2	               ;ADD THE OFFSET OF ANGLE = 90 DEG
+
+		MOV	MAXIM,R7
+		MOV	MINIM,R8
+		CMP/GT  R7,R2
+		BF	WHERE
+		SUB	R7,R2
+		BRA	UCOM_CAL
+		NOP
+WHERE:
+		CMP/GE	R8,R2
+		BT	UCOM_CAL
+		ADD	R7,R2
+
+UCOM_CAL:
+		MOV	R2,R12
+		MOV	R2,R7
+		SHAL	R7
+		BT	NEG_UCOM
+
+ANG_240:
+		MOV	ANG1,R0
+		CMP/GE	R0,R2
+		BT	ANG_480
+		MOV	UDCOM1,R3
+                MOV.W   @R3,R3
+		MOV	UDCOM3,R4
+                MOV.W   @R4,R4
+                NEG     R4,R4
+		BRA	OUT_UCOM
+		NOP
+ANG_480:
+		MOV	ANG2,R0
+		CMP/GE	R0,R2
+		BT	ANG_720
+		MOV	UDCOM5,R3
+                MOV.W   @R3,R3
+		MOV	UDCOM0,R4
+		BRA	OUT_UCOM
+		NOP
+ANG_720:
+		MOV	ANG3,R0
+		CMP/GE	R0,R2
+		BT	ANG_960
+		MOV	UDCOM1,R3
+		MOV.W   @R3,R3
+		MOV	UDCOM3,R4
+		MOV.W	@R4,R4
+		BRA	OUT_UCOM
+		NOP
+ANG_960:
+		MOV	ANG4,R0
+		CMP/GE	R0,R2
+		BT	ANG_1200
+		MOV	UDCOM1,R3
+		MOV.W   @R3,R3
+		NEG	R3,R3
+		MOV	UDCOM3,R4
+		MOV.W	@R4,R4
+		BRA	OUT_UCOM
+		NOP
+ANG_1200:
+		MOV	ANG5,R0
+		CMP/GE	R0,R2
+		BT	ANG_1440
+		MOV	UDCOM5,R3
+		MOV.W	@R3,R3
+		NEG	R3,R3
+		MOV	UDCOM0,R4
+		BRA	OUT_UCOM
+		NOP
+ANG_1440:
+		MOV	UDCOM1,R3
+		MOV.W	@R3,R3
+		NEG	R3,R3
+		MOV	UDCOM3,R4
+		MOV.W	@R4,R4
+		NEG	R4,R4
+		BRA	OUT_UCOM
+		NOP
+NEG_UCOM:
+NEG_240:
+		MOV	ANG1,R0
+		NEG	R0,R0
+		CMP/GT	R0,R2
+		BF	NEG_480
+		MOV	UDCOM1,R3
+		MOV.W	@R3,R3
+		NEG	R3,R3
+		MOV	UDCOM3,R4
+		MOV.W	@R4,R4
+		NEG	R4,R4
+		BRA	OUT_UCOM
+		NOP
+NEG_480:
+		MOV	ANG2,R0
+		NEG	R0,R0
+		CMP/GT	R0,R2
+		BF	NEG_720
+		MOV	UDCOM5,R3
+		MOV.W	@R3,R3
+		NEG	R3,R3
+		MOV	UDCOM0,R4
+		BRA	OUT_UCOM
+		NOP
+NEG_720:
+		MOV	ANG3,R0
+		NEG	R0,R0
+		CMP/GT	R0,R2
+		BF	NEG_960
+		MOV	UDCOM1,R3
+		MOV.W	@R3,R3
+		NEG	R3,R3
+		MOV	UDCOM3,R4
+		MOV.W	@R4,R4
+		BRA	OUT_UCOM
+		NOP
+NEG_960:
+		MOV	ANG4,R0
+		NEG	R0,R0
+		CMP/GT	R0,R2
+		BF	NEG_1200
+		MOV	UDCOM1,R3
+		MOV.W	@R3,R3
+		MOV	UDCOM3,R4
+		MOV.W	@R4,R4
+		BRA	OUT_UCOM
+		NOP
+NEG_1200:
+		MOV	ANG5,R0
+		NEG	R0,R0
+		CMP/GT	R0,R2
+		BF	NEG_1440
+		MOV	UDCOM5,R3
+		MOV.W	@R3,R3
+		MOV	UDCOM0,R4
+		BRA	OUT_UCOM
+		NOP
+NEG_1440:
+		MOV	UDCOM1,R3
+		MOV.W	@R3,R3
+		MOV	UDCOM3,R4
+		MOV.W	@R4,R4
+		NEG	R4,R4
+		BRA	OUT_UCOM
+		NOP
+		
+OUT_UCOM:
+		MOV	UDC1,R0			;UDC1 = SQRT(2)*220*2^3
+		MULS	R5,R3			;R5 = MEASURE UDC
+		STS	MACL,R3			
+		DIVS	R0,R3			;R3 = UCX
+
+		MOV	UDC1,R0
+		MULS	R5,R4
+		STS	MACL,R4
+		DIVS	R0,R4			;R4 = UCY
+
+ 		LDS.L	@SP+,PR
+		MOV	@SP+,R0
+		MOV	@SP+,R7
+		MOV	@SP+,R8
+		MOV	@SP+,R9
+		RTS
+		MOV	@SP+,R11	
+
+;***********************************************************************
+		.ALIGN 4
+MAXR1:	   .DATA.L  1440		       ;MAXIMUM VALUE OF IQ_EST = 10*2^6 
+					       ;DEPEND ON RATED VALUE OF MOTOR !!!!
+MINR1:	   .DATA.L -1440
+OFF_ANG:   .DATA.L 360
+MAXIM:     .DATA.L  1440	
+MINIM:	   .DATA.L -1440 
+ATANTAB:   .DATA.L  _ATANTAB
+ANG0:	   .DATA.L 0
+ANG1:	   .DATA.L 240
+ANG2:	   .DATA.L 480
+ANG3:	   .DATA.L 720
+ANG4:	   .DATA.L 960
+ANG5:	   .DATA.L 1200
+ANG6:	   .DATA.L 1440
+UDC1:	   .DATA.L 2489
+UDCOM0:	   .DATA.L 0
+UDCOM1:	   .DATA.L UD_COM1;20    	     	;SQRT(2)*220*2^3*
+					;4*10^-6*fsw*0.816=8.12*2
+;UDCOM2:	   .DATA.L -20
+
+UDCOM3:	   .DATA.L UD_COM3;35     	     	;SQRT(2)*220*2^3*
+					;2*10^-6*2*10^3*1.414=14.07 
+;UDCOM4:	   .DATA.L -35
+
+UDCOM5:	   .DATA.L UD_COM5;40     	     	;SQRT(2)*220*2^3*
+					;2*10^-6*2*10^3*1.632=16.25*2 
+;UDCOM6:	   .DATA.L -40		
+
+;*****************************************************************************
+;
+; Specify  :  ID,IQ TO I3PHASE
+;				
+; Argument :  
+;		R0 = Q
+;               R1 = Id
+;               R2 = Iq
+;
+; Use Reg. : ALL REG.
+;*****************************************************************************
+DQ_3PHS:
+	STS.L	PR,@-SP
+        MOV     SINCOS1,R10
+        JSR     @R10          ;FIND SIN(Q),COS(Q)
+	NOP
+;---------------------------------------------------------
+;  FIND         IX := Id.COS(Q) - Iq.SIN(Q)
+;               IY := Iq.COS(Q) + Id.SIN(Q)
+;
+;  FIND		VX.SQRT(3)
+;---------------------------------------------------------
+        MULS	R1,R9			;FIND Vd.COS(Q)
+        STS	MACL,R3			;R3 := Vd.COS(Q)
+        MULS    R2,R10                  ;FIND Vq.SIN(Q)
+        MOV     SQRT3,R7                ;   R7 :=SQRT(3)*2000
+        STS     MACL,R6                 ;R6 := Vq.SIN(Q)
+        MULS	R1,R10			;FIND Vd.SIN(Q)
+        SUB	R6,R3			;   VX:=R3:=Vd.COS(Q)-Vq.SIN(Q)
+	STS	MACL,R4			;R4 := Vd.SIN(Q)
+	MULS	R2,R9			;FIND Vq.COS(Q)
+	MOV	SIN90,R8		;   FIND SIN90
+	STS	MACL,R5			;R5 := Vq.COS(Q)
+        MOV     @R8,R11                 ;   R11 := SIN90
+        MOV     R11,R10                 ;   R10 := SIN90
+	ADD	R5,R4			;   VY:=R4:=Vq.COS(Q)+Vd.SIN(Q)
+        DIVS    R11,R3                  ;IX:=R3:=R3/R11:=IX/SIN90
+        DIVS    R10,R4                  ;IY:=R4:=R4/R10:=IY/SIN90
+	MOV	IX,R1
+	MOV.L	R3,@R1			;KEEP IX,IY
+	MOV	IY,R1
+        MOV.L   R4,@R1
+
+        MOV     #13,R5          ;sqrt(2/3)*2^4
+	MULS	R5,R3
+	STS	MACL,R3
+	DIVS16	R3		;IU := sqrt(2/3) * IX
+
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+
+        .ALIGN 4
+IX:	.DATA.L	_IX
+IY:	.DATA.L	_IY
+
+;_IX:	.RES.L	1
+;_IY:	.RES.L	1
+
+;******************** CONSTANT AREA ******************************
+	
+SIN90:	.DATA.L	_SIN90
+SQRT3:  .DATA.L	3464			;SRQT(3)*2000
+SCALE1:	.DATA.L 2000			;SCALE OF SQRT(3)
+SCALE2: .DATA.L 1071
+_SIN90:	.DATA.L	32767			;SCALING OF SINE TABLE
+SINCOS1:.DATA.L SINCOS
+        .END
+

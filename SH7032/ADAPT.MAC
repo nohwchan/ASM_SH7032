@@ -1,0 +1,232 @@
+        .EXPORT ADPT_CON
+	.EXPORT WG_FUNC,WM_COM_MIN
+	.INCLUDE "RAM_IMP.H"
+	.INCLUDE "MACRO.H"
+        .SECTION ADAPT,CODE,ALIGN=4
+;*****************************************************************************
+;
+; Specify  :  PI CONTROLLER
+;		OUTPUT = Kp.e + (A'+e)/Ti  , A'=A/DT 
+;		        
+; Argument :  
+;		R1 = eRROR 
+;		R2 = KP
+;		R3 = Ti = 1/(DT*ki)
+; Return   : R1 = OUTPUT
+;
+; Use Reg. : R1,R2
+;*****************************************************************************
+ADPT_CON:
+	STS.L	PR,@-SP
+
+	MOV	VAR,R0
+	MOV	@R0,R4		;R4 = A
+	MOV	R4,R5		;R5 = A_0
+	ADD	R1,R4		;R4 = A + e
+
+	MOV	A_MAX,R11
+	MOV	A_MIN,R12
+	CMP/GT	R11,R4
+	BF	NEXT
+	MOV	R11,R4
+	BRA	STORE
+	NOP
+
+NEXT:
+	CMP/GT	R12,R4		;IF R4 > LOWER THEN STORE A
+	BT	STORE
+	MOV	R12,R4
+
+STORE:	MOV	VAR,R0
+	MOV	R4,@R0		;STORE A+e
+
+;CORRECT2-----------------BEGIN------------------------
+	MOV	R3,R8		;DIVSN DON'T USE R1 AND R3
+	DIVSN	R8,R4	
+;	DIVS	R3,R4		;R4 = (A+e)/Ti
+	SHAR	R4
+;	SHAL	R4
+;CORRECT2------------------END-------------------------
+;	SHAL	R4
+
+;	MOV	#0,R4
+
+KPCON:	MULS	R2,R1
+	STS	MACL,R1		;R1 = Kp.e
+;CORRECT2-----------------BEGIN-----------------
+	SHAR	R1
+	SHAR	R1
+	SHAR	R1
+;CORRECT2------------------END------------------	
+	SHAR	R1		
+	SHAR	R1
+	SHAR	R1
+	SHAR	R1
+	SHAR	R1
+	SHAR	R1
+	SHAR	R1
+	SHAR	R1
+
+	ADD	R4,R1		;IQ_COM = R1 = Kp.e + (A + e)/Ti
+
+	MOV	WM_MAX,R8
+	MOV	WM_MIN,R9
+
+	CMP/GT  R8,R1
+	BF	LOWCH	
+	MOV	R8,R1
+
+	MOV	VAR,R0		
+	MOV	R5,@R0		;ANTI INTEGRATOR WINDING UP BY STOPPING INTEGRATE
+
+	BRA	OUTIQ
+	NOP			;IQ LIMITER	
+
+LOWCH:  CMP/GT	R9,R1
+	BT	OUTIQ
+	MOV	R9,R1
+	MOV	VAR,R0
+	MOV	R5,@R0		;ANTI INTEGRATOR WINDING UP
+
+OUTIQ:
+
+	MOV	VAR,R0
+	MOV	@R0,R13		;TEST&&&&&&&&&&&&&&&&&&&&&&&&
+
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+	.ALIGN 4
+;******************** PI_CON *******************************************
+VAR:	.DATA.L	_VAR
+A_MAX:	.DATA.L  2147450880
+A_MIN:	.DATA.L -2147450880
+WM_MAX:	.DATA.L	32767*4		;MAX WM  (14805);FIELD WEAK
+WM_MIN:	.DATA.L	-32767*4	;MIN WM  ;FIELD WEAK
+;_VAR:	.DATA.L	0
+				;A,UP_LIMIT,LO_LIMIT
+;	.INCLUDE "RAM.H"
+
+;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+;	WEIGHTING FUNCTION FOR TRANSFER SENSORLESS MODE TO V/F MODE
+;
+;WEIGHTING FUNCTION ALGORITHM :
+;
+;   THIS WEIGHTING FUNCTION WILL OPERATE BETWEEN WM_COM_MIN AND WM_COM_MAX
+
+;WEIGHTED PARAMETER = (WM_COM-WM_COM_MIN)/(WM_COM_MAX-WM_COM_MIN)*PARAMETER
+;
+;Argument:
+;		R1 : WM_COM
+;		R2 : WEIGHTED PARAMETER (WM_COM,WM_EST,IQ_COM)
+;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+WG_FUNC:
+	STS.L	PR,@-SP
+
+;	MOV	WM_COM_MIN,R10
+;	MOV	WM_COM_MAX,R11
+
+	MOV	MIN_BAND,R10
+	MOV.W	@R10,R10
+	MOV	MAX_BAND,R11
+	MOV.W	@R11,R11
+
+	MOV	R1,R3
+	SHAL	R3
+	BF	POSITIVE
+	NEG	R1,R1
+POSITIVE:
+	
+	CMP/GT	R11,R1
+	BT	OUT_WG			;IF WM_COM > WM_COM_MAX THEN 
+					;DON'T WEIGHTE THE PARAMETER
+	CMP/GT	R10,R1
+	BF	ZERO			;IF WM_COM < WM_COM_MIN THEN
+					;WEIGHTED PARAMETER = 0
+
+	SUB	R10,R1			;R1=WM_COM-WM_COM_MIN
+	SUB	R10,R11			;R11=WM_COM_MAX-WM_COM_MIN
+
+	MULS	R1,R2
+	STS	MACL,R2
+	DIVS	R11,R2			;R2 = WEIGHTED PARAMETER		
+
+	BRA	OUT_WG
+	NOP
+
+ZERO:
+	MOV	#0,R2			;WEIGHTED PARAMETER = 0
+
+OUT_WG:
+	LDS.L	@SP+,PR
+	RTS
+	NOP
+	
+        .ALIGN 4
+;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+WM_COM_MIN:	.DATA.L 804	;4 Hz	 
+WM_COM_MAX:	.DATA.L 1206	;6 Hz
+MIN_BAND:	.DATA.L _MIN_BAND
+MAX_BAND:	.DATA.L _MAX_BAND
+;***************** END OF WEIGHTING FUNCTION ***************************
+        .ALIGN 4
+;FLYING********************************************************************
+;	WEIGHTING FUNCTION FOR TRANSFER SENSORLESS MODE TO V/F MODE
+;
+;WEIGHTING FUNCTION ALGORITHM :
+;
+;   THIS WEIGHTING FUNCTION WILL OPERATE BETWEEN TIME_MIN AND TIME_MAX 
+;
+;WEIGHTED PARAMETER = (TIME-TIME_MIN)/(TIME_MAX-TIME_MIN)*PARAMETER
+;
+;Argument:
+;		R1 : TIME(CLOCK)
+;		R2 : WEIGHTED PARAMETER (WM_COM,WM_EST,IQ_COM)
+;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+;CORRECT1------------------BEGIN------------------------------------------
+;WG_FUNC1:
+;	STS.L	PR,@-SP
+
+;	MOV	TIME_MIN,R10
+;	MOV	MIX_TIME,R11
+;	MOV	@R11,R11
+;	MOV	R1,R3
+;	SHAL	R3
+;	BF	POSITIVE1
+;	NEG	R1,R1
+;POSITIVE1:
+	
+;	CMP/GT	R11,R1
+;	BT	OUT_WG1			;IF TIME > TIME_MAX THEN 
+					;DON'T WEIGHT THE PARAMETER
+;	CMP/GT	R10,R1
+;	BF	ZERO1			;IF TIME < TIME_MIN THEN
+					;WEIGHTED PARAMETER = 0
+
+;	SUB	R10,R1			;R1=TIME-TIME_MIN
+;	SUB	R10,R11			;R11=TIME_MAX-TIME_MIN
+
+;	MULS	R1,R2
+;	STS	MACL,R2
+;	DIVS	R11,R2			;R2 = WEIGHTED PARAMETER		
+
+;	BRA	OUT_WG1
+;	NOP
+
+;ZERO1:
+;	MOV	#0,R2			;WEIGHTED PARAMETER = 0
+
+;OUT_WG1:
+;	LDS.L	@SP+,PR
+;	RTS
+;	NOP
+	
+;	.ALIGN	4
+;***********************************************************************
+;TIME_MIN:	.DATA.L 0	;0 ms.	 
+;TIME_MAX:	.DATA.L 1000;15000	;100 ms.
+;MIX_TIME:	.DATA.L _MIX_TIME
+;	.ALIGN 4
+;FLYING*************** END OF WEIGHTING FUNCTION ***************************
+;CORRECT1-------------------------END---------------------------------------
+        .END
